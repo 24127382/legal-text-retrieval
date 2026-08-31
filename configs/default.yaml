@@ -1,0 +1,11 @@
+pipeline:
+  input_dir: "data/raw"                  # Thư mục chứa file JSON gốc
+  output_dir: "output"                    # Thư mục chứa đầu ra
+  metadata_jsonl: "output/metadata.jsonl" # File metadata trung gian
+  cleaned_csv: "output/cleaned_data.csv"  # File text đã làm sạch
+
+chunking:
+  target_size: 5000
+  soft_limit: 5000
+  hard_limit: 6000
+  progress_interval: 100
