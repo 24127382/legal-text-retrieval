@@ -181,9 +181,10 @@ def run_indexing_stage(
     output_id_mapping_path: str,
     model_name: str = "BAAI/bge-m3",
     batch_size: int = 32,
+    checkpoint_size: int = 15000,
     logger: Optional[logging.Logger] = None,
 ) -> None:
-    """Giai đoạn 3: Embedding chunks & Xây dựng Index FAISS (Inner Product / Cosine Similarity)"""
+    """Giai đoạn 3: Embedding chunks & Xây dựng Index FAISS (Inner Product / Cosine Similarity) có lưu Checkpoint"""
     log = logger or logging.getLogger(__name__)
     log.info("--- GIAI ĐOẠN 3: Đang tính toán Embeddings & Tạo FAISS Index ---")
 
@@ -197,34 +198,62 @@ def run_indexing_stage(
             if line.strip():
                 chunks.append(json.loads(line))
 
-    texts = [c["text"] for c in chunks]
-    chunk_ids = [c["chunk_id"] for c in chunks]
+    index_path = Path(output_index_path)
+    id_map_path = Path(output_id_mapping_path)
+    
+    start_idx = 0
+    existing_ids = []
+    
+    if index_path.exists() and id_map_path.exists():
+        log.info(f"Phát hiện Checkpoint cũ. Đang tải {index_path}...")
+        index = faiss.read_index(str(index_path))
+        with id_map_path.open("r", encoding="utf-8") as f:
+            existing_ids = json.load(f)
+        start_idx = len(existing_ids)
+        log.info(f"Đã tải {start_idx} vectors. Bỏ qua các chunks đã xử lý.")
+    else:
+        index = None
 
-    log.info("Khởi tạo mô hình Embedding: %s", model_name)
+    if start_idx >= len(chunks):
+        log.info("Tất cả chunks đã được index. Không cần chạy thêm.")
+        return
+
+    remaining_chunks = chunks[start_idx:]
+    log.info(f"Khởi tạo mô hình Embedding: %s", model_name)
     model = SentenceTransformer(model_name)
     
-    embeddings = model.encode(
-        texts,
-        batch_size=batch_size,
-        show_progress_bar=True,
-        normalize_embeddings=True,
-    )
-    embeddings = np.array(embeddings, dtype=np.float32)
-
-    dimension = embeddings.shape[1]
-    index = faiss.IndexFlatIP(dimension)  # Inner Product trên vector chuẩn hóa tương đương Cosine Similarity
-    index.add(embeddings)
-
-    index_path = Path(output_index_path)
-    index_path.parent.mkdir(parents=True, exist_ok=True)
-    faiss.write_index(index, str(index_path))
-
-    id_map_path = Path(output_id_mapping_path)
-    with id_map_path.open("w", encoding="utf-8") as f:
-        json.dump(chunk_ids, f, ensure_ascii=False, indent=2)
-
-    log.info("✔ Đã lưu FAISS Index: %s (%d vectors, dim=%d)", index_path, index.ntotal, dimension)
-    log.info("✔ Đã lưu Mapping ID: %s", id_map_path)
+    for block_start in range(0, len(remaining_chunks), checkpoint_size):
+        block_chunks = remaining_chunks[block_start : block_start + checkpoint_size]
+        texts = [c["text"] for c in block_chunks]
+        chunk_ids = [c["chunk_id"] for c in block_chunks]
+        
+        current_step = start_idx + block_start
+        log.info(f"Đang xử lý block {current_step} đến {current_step + len(block_chunks)} / {len(chunks)}...")
+        
+        embeddings = model.encode(
+            texts,
+            batch_size=batch_size,
+            show_progress_bar=True,
+            normalize_embeddings=True,
+        )
+        embeddings = np.array(embeddings, dtype=np.float32)
+        
+        if index is None:
+            dimension = embeddings.shape[1]
+            index = faiss.IndexFlatIP(dimension)
+            
+        index.add(embeddings)
+        existing_ids.extend(chunk_ids)
+        
+        # Save Checkpoint
+        index_path.parent.mkdir(parents=True, exist_ok=True)
+        faiss.write_index(index, str(index_path))
+        with id_map_path.open("w", encoding="utf-8") as f:
+            json.dump(existing_ids, f, ensure_ascii=False, indent=2)
+            
+        log.info("✔ Đã lưu Checkpoint an toàn: %d vectors.", index.ntotal)
+        
+    log.info("✔ HOÀN TẤT TOÀN BỘ QUÁ TRÌNH INDEXING!")
 
 
 def run_full_pipeline(
