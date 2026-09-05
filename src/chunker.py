@@ -216,6 +216,7 @@ def build_chunk_record(record: Dict[str, Any], chunk_units: List[ChunkUnit], ind
         chunk_id=f'{record["document_id"]}_chunk_{index:04d}',
         chunk_index=index,
         document_title=record.get("document_title"),
+        document_link=record.get("document_link"),
         part_number=chunk_units[0].part_number,
         part_title=chunk_units[0].part_title,
         chapter_number=chunk_units[0].chapter_number,

@@ -26,6 +26,7 @@ class ChunkRecord:
     chunk_id: str
     chunk_index: int
     document_title: Optional[str]
+    document_link: Optional[str]
     part_number: Optional[str]
     part_title: Optional[str]
     chapter_number: Optional[str]
