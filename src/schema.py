@@ -15,15 +15,10 @@ class DocumentMetadata:
     """Document-level metadata and structural extraction outputs."""
     document_id: str
     document_title: Optional[str]
-    part_number: Optional[str]
-    part_title: Optional[str]
-    chapter_number: Optional[str]
-    chapter_title: Optional[str]
-    section_number: Optional[str]
-    section_title: Optional[str]
-    fingerprint: List[str]
-    units: List[StructuralUnit]
+    document_link: Optional[str]
     text: str
+    units: List[StructuralUnit]
+    fingerprint: List[str]
     
 @dataclass
 class ChunkRecord:
