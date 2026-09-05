@@ -53,11 +53,13 @@ def run_parsing_stage(
                 doc_id = str(row["document_id"])
                 text = str(row["cleaned_text"]) if pd.notna(row["cleaned_text"]) else ""
                 title = str(row["document_title"]).strip() if pd.notna(row["document_title"]) else None
+                link = str(row["link"]).strip() if "link" in row and pd.notna(row["link"]) else None
 
                 metadata = parse_document(
                     document_id=doc_id,
                     text=text,
                     document_title=title,
+                    document_link=link,
                 )
                 f.write(json.dumps(asdict(metadata), ensure_ascii=False) + "\n")
                 total += 1

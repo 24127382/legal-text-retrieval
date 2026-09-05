@@ -128,6 +128,7 @@ def parse_document(
     document_id: str,
     text: str,
     document_title: Optional[str] = None,
+    document_link: Optional[str] = None,
 ) -> DocumentMetadata:
     text = text or ""
     fingerprint = detect_fingerprint(text)
@@ -148,28 +149,11 @@ def parse_document(
 
     units.sort(key=lambda x: x.char_start)
 
-    part_number = part_title = None
-    chapter_number = chapter_title = None
-    section_number = section_title = None
-
-    for unit in units:
-        if unit.level == "part" and part_number is None:
-            part_number, part_title = unit.number, unit.title
-        elif unit.level == "chapter" and chapter_number is None:
-            chapter_number, chapter_title = unit.number, unit.title
-        elif unit.level == "section" and section_number is None:
-            section_number, section_title = unit.number, unit.title
-
     return DocumentMetadata(
         document_id=document_id,
         document_title=document_title,
-        part_number=part_number,
-        part_title=part_title,
-        chapter_number=chapter_number,
-        chapter_title=chapter_title,
-        section_number=section_number,
-        section_title=section_title,
-        fingerprint=fingerprint,
-        units=units,
+        document_link=document_link,
         text=text,
+        units=units,
+        fingerprint=fingerprint,
     )
