@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import pickle
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -15,6 +16,7 @@ from sentence_transformers import SentenceTransformer
 from src.chunker import chunk_document
 from src.parser import load_raw_documents, parse_document
 
+from src.bm25 import BM25
 DEFAULT_CHUNKING_CONFIG: Dict[str, Any] = {
     "target_size": 5000,
     "soft_limit": 5000,
@@ -183,8 +185,9 @@ def run_indexing_stage(
     batch_size: int = 32,
     checkpoint_size: int = 15000,
     logger: Optional[logging.Logger] = None,
+    output_bm25_path: Optional[str] = None,
 ) -> None:
-    """Giai đoạn 3: Embedding chunks & Xây dựng Index FAISS (Inner Product / Cosine Similarity) có lưu Checkpoint"""
+    """Build the FAISS and BM25 indexes for the chunks file."""
     log = logger or logging.getLogger(__name__)
     log.info("--- GIAI ĐOẠN 3: Đang tính toán Embeddings & Tạo FAISS Index ---")
 
@@ -214,45 +217,61 @@ def run_indexing_stage(
     else:
         index = None
 
-    if start_idx >= len(chunks):
-        log.info("Tất cả chunks đã được index. Không cần chạy thêm.")
-        return
+    if start_idx < len(chunks):
+        remaining_chunks = chunks[start_idx:]
+        log.info("Khởi tạo mô hình Embedding: %s", model_name)
+        model = SentenceTransformer(model_name)
 
-    remaining_chunks = chunks[start_idx:]
-    log.info(f"Khởi tạo mô hình Embedding: %s", model_name)
-    model = SentenceTransformer(model_name)
-    
-    for block_start in range(0, len(remaining_chunks), checkpoint_size):
-        block_chunks = remaining_chunks[block_start : block_start + checkpoint_size]
-        texts = [c["text"] for c in block_chunks]
-        chunk_ids = [c["chunk_id"] for c in block_chunks]
-        
-        current_step = start_idx + block_start
-        log.info(f"Đang xử lý block {current_step} đến {current_step + len(block_chunks)} / {len(chunks)}...")
-        
-        embeddings = model.encode(
-            texts,
-            batch_size=batch_size,
-            show_progress_bar=True,
-            normalize_embeddings=True,
+        for block_start in range(0, len(remaining_chunks), checkpoint_size):
+            block_chunks = remaining_chunks[block_start : block_start + checkpoint_size]
+            texts = [c["text"] for c in block_chunks]
+            chunk_ids = [c["chunk_id"] for c in block_chunks]
+
+            current_step = start_idx + block_start
+            log.info(
+                "Đang xử lý block %d đến %d / %d...",
+                current_step,
+                current_step + len(block_chunks),
+                len(chunks),
+            )
+
+            embeddings = model.encode(
+                texts,
+                batch_size=batch_size,
+                show_progress_bar=True,
+                normalize_embeddings=True,
+            )
+            embeddings = np.array(embeddings, dtype=np.float32)
+
+            if index is None:
+                index = faiss.IndexFlatIP(embeddings.shape[1])
+
+            index.add(embeddings)
+            existing_ids.extend(chunk_ids)
+
+            index_path.parent.mkdir(parents=True, exist_ok=True)
+            faiss.write_index(index, str(index_path))
+            with id_map_path.open("w", encoding="utf-8") as f:
+                json.dump(existing_ids, f, ensure_ascii=False, indent=2)
+
+            log.info("✔ Đã lưu Checkpoint an toàn: %d vectors.", index.ntotal)
+    else:
+        log.info("FAISS đã có đủ %d vectors; bỏ qua bước embedding.", len(chunks))
+
+    bm25_path = Path(output_bm25_path) if output_bm25_path else index_path.with_name("bm25.pkl")
+    bm25_path.parent.mkdir(parents=True, exist_ok=True)
+    bm25_index = BM25.create_index([chunk["text"] for chunk in chunks])
+    with bm25_path.open("wb") as f:
+        pickle.dump(
+            {
+                "index": bm25_index,
+                "chunk_ids": [chunk["chunk_id"] for chunk in chunks],
+            },
+            f,
+            protocol=pickle.HIGHEST_PROTOCOL,
         )
-        embeddings = np.array(embeddings, dtype=np.float32)
-        
-        if index is None:
-            dimension = embeddings.shape[1]
-            index = faiss.IndexFlatIP(dimension)
-            
-        index.add(embeddings)
-        existing_ids.extend(chunk_ids)
-        
-        # Save Checkpoint
-        index_path.parent.mkdir(parents=True, exist_ok=True)
-        faiss.write_index(index, str(index_path))
-        with id_map_path.open("w", encoding="utf-8") as f:
-            json.dump(existing_ids, f, ensure_ascii=False, indent=2)
-            
-        log.info("✔ Đã lưu Checkpoint an toàn: %d vectors.", index.ntotal)
-        
+    log.info("✔ Đã lưu BM25 index: %s (%d chunks).", bm25_path, len(chunks))
+
     log.info("✔ HOÀN TẤT TOÀN BỘ QUÁ TRÌNH INDEXING!")
 
 
@@ -297,8 +316,9 @@ def run_full_pipeline(
     if run_embedding:
         run_indexing_stage(
             chunks_jsonl=str(chunks_jsonl),
-            output_index_path=str(output_path / "faiss.index"),
+            output_index_path=str(output_path / "faiss.idx"),
             output_id_mapping_path=str(output_path / "chunk_ids.json"),
+            output_bm25_path=str(output_path / "bm25.pkl"),
             model_name=model_name,
             logger=logger,
         )
