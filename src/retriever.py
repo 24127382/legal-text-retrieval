@@ -8,7 +8,7 @@ import faiss
 import numpy as np
 import torch
 from pyvi import ViTokenizer
-from sentence_transformers import SentenceTransformer
+from sentence_transformers import SentenceTransformer, CrossEncoder
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +23,8 @@ class LegalRetriever:
         bm25_path: Optional[str] = None,
         bm25_id_path: Optional[str] = None,
         model_name: str = "BAAI/bge-m3",
+        reranker_name: Optional[str] = "BAAI/bge-reranker-v2-m3",
+        raw_chunks_path: Optional[str] = None,
         device: Optional[str] = None
     ):
         self.index_path = Path(index_path)
@@ -61,6 +63,30 @@ class LegalRetriever:
                     self.bm25_chunk_ids = json.load(f)
             else:
                 logger.warning("Không tìm thấy file BM25, sẽ bỏ qua chế độ Hybrid.")
+                
+        # 3. LOAD RERANKER (CROSS-ENCODER)
+        self.reranker = None
+        self.raw_chunks_text = None
+        if reranker_name:
+            logger.info(f"Đang tải mô hình Reranker {reranker_name} trên {self.device.upper()}...")
+            self.reranker = CrossEncoder(reranker_name, device=self.device)
+            # Chúng ta cần load file chunks.jsonl vào bộ nhớ RAM để Reranker có thể lấy lại nội dung text gốc
+            
+            if raw_chunks_path:
+                chunks_path = Path(raw_chunks_path)
+            else:
+                chunks_path = self.id_mapping_path.parent / "chunks.jsonl"
+                
+            if chunks_path.exists():
+                logger.info(f"Đang nạp file {chunks_path.name} vào bộ nhớ (cần cho Reranker)...")
+                self.raw_chunks_text = {}
+                with chunks_path.open("r", encoding="utf-8") as f:
+                    for line in f:
+                        if line.strip():
+                            record = json.loads(line)
+                            self.raw_chunks_text[record["chunk_id"]] = record["text"]
+            else:
+                logger.warning(f"Không tìm thấy {chunks_path}. Tính năng Rerank sẽ không hoạt động nếu thiếu Text gốc.")
                 
         logger.info("✔ Hệ thống tìm kiếm (Retriever) đã sẵn sàng!")
 
@@ -149,6 +175,47 @@ class LegalRetriever:
             
         return results
 
+    def search_hybrid_rerank(self, query: str, top_k_retrieve: int = 60, top_k_rerank: int = 5) -> List[Dict[str, float]]:
+        """
+        Tìm kiếm lai (Hybrid) sau đó Rerank lại bằng Cross-Encoder.
+        """
+        if not self.reranker or not self.raw_chunks_text:
+            logger.warning("Reranker hoặc Raw Text không khả dụng. Chuyển về Hybrid RRF.")
+            return self.search_hybrid(query, top_k=top_k_rerank)
+            
+        # 1. Lấy Top N bằng Hybrid (RRF)
+        hybrid_results = self.search_hybrid(query, top_k=top_k_retrieve)
+        
+        # 2. Xây dựng cặp (Query, Document) để đưa vào Cross-Encoder
+        pairs = []
+        valid_chunks = []
+        for res in hybrid_results:
+            chunk_id = res["chunk_id"]
+            if chunk_id in self.raw_chunks_text:
+                text = self.raw_chunks_text[chunk_id]
+                pairs.append([query, text])
+                valid_chunks.append(chunk_id)
+                
+        if not pairs:
+            return hybrid_results[:top_k_rerank]
+            
+        # 3. Tính điểm Reranker
+        # Mặc định CrossEncoder trả về mảng điểm số logits (float)
+        scores = self.reranker.predict(pairs)
+        
+        # 4. Gắn điểm và sắp xếp lại
+        reranked_results = []
+        for chunk_id, score in zip(valid_chunks, scores):
+            reranked_results.append({
+                "chunk_id": chunk_id,
+                "score": float(score)
+            })
+            
+        # Sắp xếp giảm dần theo điểm Reranker
+        reranked_results = sorted(reranked_results, key=lambda x: x["score"], reverse=True)
+        
+        return reranked_results[:top_k_rerank]
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(levelname)s - %(message)s")
     
@@ -177,6 +244,10 @@ if __name__ == "__main__":
             
         print("\n--- KẾT QUẢ HYBRID (RRF) ---")
         for rank, res in enumerate(retriever.search_hybrid(query, top_k=3), 1):
+            print(f" {rank}. [{res['chunk_id']}] - Score: {res['score']:.4f}")
+            
+        print("\n--- KẾT QUẢ HYBRID + RERANK ---")
+        for rank, res in enumerate(retriever.search_hybrid_rerank(query, top_k_retrieve=30, top_k_rerank=3), 1):
             print(f" {rank}. [{res['chunk_id']}] - Score: {res['score']:.4f}")
     else:
         print("Vui lòng chạy bm25_builder.py trước khi test.")

@@ -2,6 +2,7 @@ import json
 import logging
 import zipfile
 from pathlib import Path
+from typing import Optional
 from tqdm import tqdm
 
 from src.retriever import LegalRetriever
@@ -14,8 +15,10 @@ def generate_submission(
     id_mapping_file: str,
     bm25_file: str,
     bm25_id_file: str,
+    raw_chunks_file: Optional[str] = None,
     output_dir: str = "output",
-    top_k_chunks: int = 60,
+    mode: str = "hybrid",
+    top_k_chunks: int = 30,
     top_k_docs: int = 5
 ):
     """
@@ -23,12 +26,13 @@ def generate_submission(
     """
     logger.info("--- BẮT ĐẦU GIẢI ĐỀ THI (SUBMISSION GENERATOR) ---")
     
-    # 1. Khởi tạo Hybrid Retriever
+    # 1. Khởi tạo Retriever
     retriever = LegalRetriever(
         index_path=index_file, 
         id_mapping_path=id_mapping_file,
         bm25_path=bm25_file,
-        bm25_id_path=bm25_id_file
+        bm25_id_path=bm25_id_file,
+        raw_chunks_path=raw_chunks_file
     )
     
     # 2. Đọc đề thi
@@ -47,8 +51,11 @@ def generate_submission(
     for qid, qdata in tqdm(test_data.items(), desc="Đang giải đề", total=len(test_data)):
         query = qdata.get("question", "")
         
-        # Dùng Hybrid Search RRF
-        results = retriever.search_hybrid(query, top_k=top_k_chunks)
+        # Dùng Search Mode
+        if mode == "rerank":
+            results = retriever.search_hybrid_rerank(query, top_k_retrieve=top_k_chunks, top_k_rerank=top_k_docs * 3)
+        else:
+            results = retriever.search_hybrid(query, top_k=top_k_chunks)
         
         # Bóc tách và lọc lấy Top 5 Document ID độc nhất
         unique_docs = []
@@ -96,6 +103,7 @@ if __name__ == "__main__":
     ID_FILE = "data/processed/chunk_ids.json"
     BM25_FILE = "data/processed/bm25.pkl"
     BM25_ID_FILE = "data/processed/bm25_chunk_ids.json"
+    CHUNKS_FILE = "data/processed/chunks.jsonl"
     
     generate_submission(
         test_file=TEST_FILE,
@@ -103,7 +111,9 @@ if __name__ == "__main__":
         id_mapping_file=ID_FILE,
         bm25_file=BM25_FILE,
         bm25_id_file=BM25_ID_FILE,
-        output_dir="output",
-        top_k_chunks=60,
+        raw_chunks_file=CHUNKS_FILE,
+        output_dir="output/output_ver2",
+        mode="rerank",
+        top_k_chunks=30,
         top_k_docs=5
     )
