@@ -19,7 +19,8 @@ def generate_submission(
     output_dir: str = "output",
     mode: str = "hybrid",
     top_k_chunks: int = 30,
-    top_k_docs: int = 5
+    top_k_docs: int = 5,
+    llm_name: Optional[str] = None
 ):
     """
     Đọc file đề thi public-official.json, dự đoán và xuất ra file submission.json & submission.zip
@@ -34,6 +35,15 @@ def generate_submission(
         bm25_id_path=bm25_id_file,
         raw_chunks_path=raw_chunks_file
     )
+    
+    # 1.5 Khởi tạo Query Expander (LLM)
+    expander = None
+    if llm_name:
+        try:
+            from src.query_expander import LLMQueryExpander
+            expander = LLMQueryExpander(model_name=llm_name)
+        except Exception as e:
+            logger.warning(f"Không thể khởi tạo LLMQueryExpander: {e}")
     
     # 2. Đọc đề thi
     test_path = Path(test_file)
@@ -50,12 +60,20 @@ def generate_submission(
     
     for qid, qdata in tqdm(test_data.items(), desc="Đang giải đề", total=len(test_data)):
         query = qdata.get("question", "")
+        search_query = query
+        
+        if expander:
+            try:
+                expanded_keywords = expander.expand_query(query)
+                search_query = f"{query} {expanded_keywords}"
+            except Exception as e:
+                logger.warning(f"Lỗi khi expand_query: {e}")
         
         # Dùng Search Mode
         if mode == "rerank":
-            results = retriever.search_hybrid_rerank(query, top_k_retrieve=top_k_chunks, top_k_rerank=top_k_docs * 3)
+            results = retriever.search_hybrid_rerank(search_query, top_k_retrieve=top_k_chunks, top_k_rerank=top_k_docs * 3)
         else:
-            results = retriever.search_hybrid(query, top_k=top_k_chunks)
+            results = retriever.search_hybrid(search_query, top_k=top_k_chunks)
         
         # Bóc tách và lọc lấy Top 5 Document ID độc nhất
         unique_docs = []
@@ -112,8 +130,9 @@ if __name__ == "__main__":
         bm25_file=BM25_FILE,
         bm25_id_file=BM25_ID_FILE,
         raw_chunks_file=CHUNKS_FILE,
-        output_dir="output/output_ver2",
+        output_dir="output/output_ver3",
         mode="rerank",
         top_k_chunks=30,
-        top_k_docs=5
+        top_k_docs=5,
+        llm_name="thangvip/qwen3-1.7b-vietnamese-legal-grpo-phase-2"
     )
