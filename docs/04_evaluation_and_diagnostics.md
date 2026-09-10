@@ -64,6 +64,53 @@ Extra citations, provenance hoặc giải thích nối vào submitted `answer` t
 
 Diagnostics sau dùng để tìm bottleneck, không phải official scorer outputs.
 
+### Data & corpus diagnostics
+
+Các diagnostics này là local research diagnostics theo [00 — Data contract và preprocessing](00_data_contract_and_preprocessing.md), không phải organizer metrics và không được ghi vào official score.
+
+**Raw data**
+
+- schema/type/nullability theo từng file/split;
+- missing/duplicate sample ID và `document_id`;
+- empty/null question, answer và source text;
+- split/document counts, immutable manifests và input fingerprints;
+- exact/near-duplicate question analysis; duplicated answer/reference entries;
+- document/passage overlap chỉ được diễn giải là leakage sau khi xét split semantics và legal-text repetition.
+
+**Parsing**
+
+- parse success/failure rate và failure reasons; số record bị fallback hoặc skipped;
+- distribution detected part/chapter/section/article/clause/point;
+- malformed numbering, impossible hierarchy transitions và parent leakage;
+- overlapping, duplicate và uncovered source spans;
+- source coverage ratio và stratified manual quality-control sample.
+
+**Chunking / retrieval-unit construction**
+
+- chunks per document và document coverage;
+- token-length distribution `min/mean/median/p90/p95/p99/max` theo từng retriever/reranker/generator tokenizer liên quan;
+- source-text coverage, overlap/gap distribution và accidental duplicate-chunk rate;
+- truncation rate, gồm delta do context enrichment;
+- số parent structural units bị một chunk cắt qua hoặc chứa đồng thời;
+- intentional overlap/multi-granularity phải có flag để không bị nhầm với duplicate.
+
+**Provenance và integrity**
+
+- valid `chunk_id → document_id → source document` mapping rate và orphan rate;
+- missing/unreliable source-span rate; exact `source_text == canonical_source[start:end]` khi offset được khai báo;
+- deterministic regeneration trên identical input/config;
+- input, preprocessing config, corpus/manifest và index fingerprint consistency;
+- `index item count ↔ chunk manifest count ↔ chunk IDs ↔ corpus fingerprint`.
+
+**Retrieval representation**
+
+- `source_text` versus `retrieval_text` expansion ratio;
+- title/hierarchy enrichment coverage và missing-metadata behavior;
+- truncation mới phát sinh do enrichment theo từng tokenizer;
+- kiểm tra derived prefix không overwrite hoặc bị trình bày như original legal text.
+
+Corpus không được gọi `Validated` nếu có silent document loss, silent parse-error skipping, orphan chunk, unexplained duplicate, không tái tạo được mapping hoặc index không khớp manifest. Parser/chunker/validator code hiện có chỉ là `Code present` cho đến khi validation artifacts chứng minh các checks tương ứng.
+
 ### Candidate document recall
 
 Với gold set `G_q` và top-K candidate documents đã deduplicate `C_q^K`:

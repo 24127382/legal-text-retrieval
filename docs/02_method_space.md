@@ -2,7 +2,25 @@
 
 ## Cách đọc taxonomy
 
-**Candidate retrieval** tạo candidate pool rộng; **fusion** hợp nhất nhiều rank/score; **reranking** chấm lại một pool nhỏ; **final selection** quyết định output. Chi phí: `L` thấp, `M` vừa, `H` cao, `VH` rất cao. Priority là thứ tự nghiên cứu tương đối, không phải dự đoán chắc chắn về gain. `Code present` chỉ ghi nhận implementation/prototype quan sát được; không đồng nghĩa `Validated` hoặc `Benchmarked`.
+**Corpus representation** quyết định evidence unit nào tồn tại; **candidate retrieval** tạo candidate pool rộng; **fusion** hợp nhất nhiều rank/score; **reranking** chấm lại một pool nhỏ; **final selection** quyết định output. Chi phí: `L` thấp, `M` vừa, `H` cao, `VH` rất cao. Priority là thứ tự nghiên cứu tương đối, không phải dự đoán chắc chắn về gain. `Code present` chỉ ghi nhận implementation/prototype quan sát được; không đồng nghĩa `Validated` hoặc `Benchmarked`.
+
+## Method map — Data & Corpus Representation
+
+Các dimensions dưới đây là controllable research axes. Baseline candidate tạo `C0`; research candidate chỉ được promotion sau controlled ablation. Chi tiết invariant nằm tại [00 — Data contract và preprocessing](00_data_contract_and_preprocessing.md).
+
+| Dimension | Baseline candidate | Research candidate | Speculative / conditional | Dependency và rủi ro chính |
+|---|---|---|---|---|
+| Normalization | NFC/line ending/controlled whitespace, source-preserving | Rule-specific artifact removal đã audit | Learned rewriting/correction | Không xóa numbering, dấu, punctuation hoặc legal wording. |
+| Legal structure parsing | Conservative headings/boundaries + fallback | Multiple parser rules theo document fingerprint | Learned structure parser | Boundary phải có span/provenance diagnostics; code hiện tại chỉ `Code present`. |
+| Retrieval unit | Một policy deterministic, auditable | Article/clause/point khi meaningful; structure-aware bounded chunks | Learned segmentation | Không có một level phù hợp mọi document. |
+| Chunk size/overlap | Fixed config được log | Token-bounded/sliding-window ablation | Query-adaptive chunking | Đo coverage, duplication, truncation; giữ structural policy fixed khi đổi size. |
+| Multi-granularity | Single-granularity control | Document + article/clause indexes | Learned routing giữa granularities | Cần dedup/aggregation và cost accounting. |
+| Hierarchy/title enrichment | `source_text` không đổi; enrichment tắt hoặc tối thiểu | Prepend/field-weight parent/title vào `retrieval_text` | Learned metadata serialization | Tách boundary khỏi enrichment; đo expansion/truncation. |
+| Metadata representation | Chỉ field có source rõ | Soft boost/fielded retrieval | Hard temporal/legal graph filters | Missing khác unknown; không invent metadata. |
+| Provenance | Manifest `chunk_id → document_id → source` | Reliable structural unit/source offsets | Claim-level lineage tự động | Hard invariant, không phải optional model feature. |
+| Version/temporal metadata | Preserve nếu source có | Normalize/version-link sau validation | Suy đoán hiệu lực từ text | Chỉ dùng khi data/rule có evidence; tránh false filtering. |
+
+`C0` là corpus/preprocessing baseline, không phải model. Khi so retriever, giữ corpus representation fixed; khi so representation, giữ downstream retriever/aggregation fixed.
 
 ## Method map — LegalIR
 
@@ -11,11 +29,11 @@
 | Exact/rule-based citation matching | Parse số luật, Điều/Khoản/Điểm, tên văn bản rồi exact/normalized match | Dense làm mờ identifier | Precision cao, debug được | Không bắt implicit concept/paraphrase | Auxiliary feature cho BM25/dense | L | Cao sau B0 | `Research candidate` |
 | TF-IDF / n-gram | Sparse lexical vector trên token/character n-gram | Rare terms, OCR/tokenization variants | Rẻ, interpretable | Semantic gap, length sensitivity | Diversity control cho BM25 | L | Trung bình | `Research candidate` |
 | BM25 / BM25F | Probabilistic term weighting; BM25F weight theo field | Exact terminology, citations, title | Classical strong baseline | Vocabulary mismatch; field tuning | Core complement của dense | L–M | Rất cao | `Planned` E00 |
-| SPLADE | Transformer học sparse term expansion/weight | Vocabulary mismatch nhưng vẫn cần inverted index | Sparse, interpretable phần nào | Train/index phức tạp; có thể correlate BM25 | Chỉ giữ nếu unique-gold/union recall tăng | H | Cao, Phase 5 | `Planned` E09 |
+| SPLADE | Transformer học sparse term expansion/weight | Vocabulary mismatch nhưng vẫn cần inverted index | Sparse, interpretable phần nào | Train/index phức tạp; có thể correlate BM25 | Chỉ giữ nếu unique-gold/union recall tăng | H | Cao, Phase 7 | `Planned` E09 |
 | Dense bi-encoder | Encode query/document độc lập, nearest-neighbor | Paraphrase và semantic mismatch | Retrieval nhanh sau indexing | Nén nuance; identifier yếu | Core complement của lexical | M–H | Rất cao | `Code present`; E01 `Planned` |
 | Multilingual dense / multilingual-E5 | Multilingual embedding objective | Cross-lingual/general Vietnamese representation gap | Strong zero-shot candidate | Chưa chắc hiểu legal nuance | Comparison với BGE-M3 | M–H | Trung bình | `Research candidate` |
 | BGE-M3 | Multilingual dense; family hỗ trợ sparse/multi-vector | Paraphrase tiếng Việt, multi-granularity | Backbone hiện có; nhiều modes | Modes cùng backbone có correlated errors | Dense core; modes khác cần ablation | M–H | Rất cao | Dense mode `Code present`; E01 `Planned` |
-| ColBERT / late interaction | Token embeddings + MaxSim | Single-vector information bottleneck | Fine-grained query–token match | Index lớn, scoring nặng | Potential unique branch so với BM25/dense | H–VH | Cao, Phase 5 | `Planned` E10 |
+| ColBERT / late interaction | Token embeddings + MaxSim | Single-vector information bottleneck | Fine-grained query–token match | Index lớn, scoring nặng | Potential unique branch so với BM25/dense | H–VH | Cao, Phase 7 | `Planned` E10 |
 | Weighted score fusion | Normalize rồi cộng score theo weight | Single-retriever blind spots | Dùng confidence magnitude | Nhạy scale/calibration | So trực tiếp với RRF | L | Rất cao | `Planned` E02 |
 | RRF | Cộng reciprocal rank giữa lists | Heterogeneous score scales | Robust, đơn giản | Bỏ score magnitude; `k` cần tune | So trực tiếp với alpha fusion | L | Rất cao | `Planned` E03 |
 | Cross-encoder reranking | Joint encode query–candidate | Similar laws bị first-stage misorder | Full interaction, precision tốt | Chậm; không cứu retrieval miss | Sau candidate recall đủ cao | H | Rất cao | `Planned` E04 |
@@ -23,22 +41,22 @@
 | Query rewriting | Viết lay query thành legal-search query | Lay-language và terminology mismatch | Tăng lexical/semantic match | Query drift, fabricated condition | Luôn giữ original branch | M–H | Sau B2 | `Planned` E11 |
 | Multi-query retrieval | Sinh facets/paraphrases, retrieve rồi fuse | Query thiếu facet, multi-aspect | Tăng coverage/diversity | Noise và compute | Original + variants, đo overlap | H | Sau B2 | `Planned` E11 |
 | HyDE | Sinh hypothetical document rồi embed | Query–document style mismatch zero-shot | Corpus-style representation | Hallucinated legal detail | Auxiliary, không thay query gốc | H | Trung bình–thấp | `Research candidate` |
-| PRF / RM3 | Retrieve lần 1, lấy term từ top docs, expand rồi retrieve lần 2 | Vocabulary mismatch dựa trên corpus | Corpus-grounded hơn generative rewrite | Query drift nếu initial results sai | Nhánh phụ giữ original query | M | Phase 5 | `Planned` E12 |
+| PRF / RM3 | Retrieve lần 1, lấy term từ top docs, expand rồi retrieve lần 2 | Vocabulary mismatch dựa trên corpus | Corpus-grounded hơn generative rewrite | Query drift nếu initial results sai | Nhánh phụ giữ original query | M | Phase 7 | `Planned` E12 |
 | Neural PRF | Tổng hợp representation từ top candidates | Semantic expansion khó biểu diễn bằng term | Học feedback giàu hơn | Train/cost, feedback drift | Auxiliary dense branch | H | Sau RM3 | `Research candidate` |
-| Title enrichment | Prepend/weight document title | Chunk thiếu scope/topic | Rẻ, legal-specific, prior work hỗ trợ | Title noisy/lặp gây score bias | Orthogonal với backbone | L | Rất cao, Phase 2 | `Planned` E05 |
-| Legal hierarchy/structure enrichment | Thêm parent law/chapter/article context | Clause bị mất context | Giữ phạm vi pháp lý | Context noise/truncation | Cùng title nhưng ablate riêng | L–M | Cao, Phase 2 | Metadata `Code present`; retrieval E05 `Planned` |
+| Title enrichment | Prepend/weight document title | Chunk thiếu scope/topic | Rẻ, legal-specific, prior work hỗ trợ | Title noisy/lặp gây score bias | Orthogonal với backbone | L | Rất cao, Phase 4 | `Planned` D05/E05 |
+| Legal hierarchy/structure enrichment | Thêm parent law/chapter/article context | Clause bị mất context | Giữ phạm vi pháp lý | Context noise/truncation | Cùng title nhưng ablate riêng | L–M | Cao, Phase 4 | Metadata `Code present`; D05/E05 `Planned` |
 | Hierarchical chunking | Chia theo law→chapter→article→clause | Long-document truncation/dilution | Bảo toàn semantic boundary | Cần document aggregation | Corpus-representation axis | M | Core | `Code present` |
 | Metadata-aware retrieval | Boost/filter theo loại, cơ quan, ngày, hiệu lực | Temporal/type ambiguity | Structured signal | Hard filter có thể loại gold | Soft feature cho LTR/reranker | M | Data-dependent | `Research candidate` |
-| Contrastive retriever fine-tuning | Kéo positive gần, negative xa | General-domain relevance mismatch | Adapt retrieval objective | False negatives/overfit | Sau stable B2 | H | Phase 4 | `Planned` E08 |
-| Hard-negative mining | Train trên near-miss candidates | Similar-law decision boundary | Supervision giàu thông tin | Unlabeled relevant bị đẩy xa | Kỹ thuật train, không phải distillation | H | Phase 3–4 | `Planned` E07/E08 |
+| Contrastive retriever fine-tuning | Kéo positive gần, negative xa | General-domain relevance mismatch | Adapt retrieval objective | False negatives/overfit | Sau stable B2 | H | Phase 6 | `Planned` E08 |
+| Hard-negative mining | Train trên near-miss candidates | Similar-law decision boundary | Supervision giàu thông tin | Unlabeled relevant bị đẩy xa | Kỹ thuật train, không phải distillation | H | Phase 5–6 | `Planned` E07/E08 |
 | DAPT / TAPT | Continued pretraining trên legal/task corpus | Domain vocabulary/style shift | Adapt encoder trước supervised task | Compute, forgetting, gain không chắc | Ablate trước fine-tuning | VH | Sau B2 | `Research candidate` |
-| Synthetic query generation | Sinh query cho corpus passages/docs | Thiếu labeled queries | Tăng supervision/coverage | Distribution/label noise | Có thể feed dense/SPLADE | H | Phase 4–6 | `Research candidate` |
+| Synthetic query generation | Sinh query cho corpus passages/docs | Thiếu labeled queries | Tăng supervision/coverage | Distribution/label noise | Có thể feed dense/SPLADE | H | Phase 6–8 | `Research candidate` |
 | Learning-to-Rank / LambdaMART | Học từ BM25, dense, metadata, rank features | Hand-tuned fusion không tối ưu | Kết hợp heterogeneous features | Cần labels, dễ leakage/overfit | Sau features ổn định | M–H | Sau B2 | `Research candidate` |
 | Graph retrieval / GraphRAG | Expand qua dẫn chiếu, sửa đổi, quan hệ văn bản | Multi-hop/cross-reference | Khai thác legal topology | Edge extraction lỗi lan truyền | Auxiliary signal, không thay text | VH | Dài hạn | `Speculative` |
-| Direct document-ID prediction | Query encoder trực tiếp score fixed set IDs; extreme multi-label ranking | Retrieval index không học end-to-end trên fixed corpus | Có thể tận dụng corpus nhỏ/cố định | Memorization, không generalize unseen docs | Diversity/ensemble branch | H | Phase 7 | `Planned` E15 |
-| Generative retrieval (DSI/NCI) | Seq2seq sinh document identifier; corpus mã hóa trong parameters | Conventional index tách rời objective | Direct ID optimization | Training phức tạp, catastrophic ID errors, cập nhật corpus khó | Alternative formulation, không phải B0 | VH | Phase 7 thấp | `Planned` E16 |
-| Teacher–student distillation | Cross-encoder teacher tạo soft relevance/margins cho cheaper retriever | Student thiếu fine-grained relevance | Chuyển signal phong phú, inference rẻ | Teacher bias/false soft labels | Sau teacher đã được validate | H | Phase 6 | `Planned` E13 |
-| Pseudo-labeling / self-training | Gán nhãn unlabeled pairs; lặp train–score–filter | Thiếu labels/domain shift | Mở rộng training set | Confirmation bias/false labels | Có thể dùng teacher và synthetic query | H | Phase 6 | `Planned` E13 |
+| Direct document-ID prediction | Query encoder trực tiếp score fixed set IDs; extreme multi-label ranking | Retrieval index không học end-to-end trên fixed corpus | Có thể tận dụng corpus nhỏ/cố định | Memorization, không generalize unseen docs | Diversity/ensemble branch | H | Phase 9 | `Planned` E15 |
+| Generative retrieval (DSI/NCI) | Seq2seq sinh document identifier; corpus mã hóa trong parameters | Conventional index tách rời objective | Direct ID optimization | Training phức tạp, catastrophic ID errors, cập nhật corpus khó | Alternative formulation, không phải B0 | VH | Phase 9 thấp | `Planned` E16 |
+| Teacher–student distillation | Cross-encoder teacher tạo soft relevance/margins cho cheaper retriever | Student thiếu fine-grained relevance | Chuyển signal phong phú, inference rẻ | Teacher bias/false soft labels | Sau teacher đã được validate | H | Phase 8 | `Planned` E13 |
+| Pseudo-labeling / self-training | Gán nhãn unlabeled pairs; lặp train–score–filter | Thiếu labels/domain shift | Mở rộng training set | Confirmation bias/false labels | Có thể dùng teacher và synthetic query | H | Phase 8 | `Planned` E13 |
 | Final top-k calibration | Threshold, margin, probability hoặc adaptive k | Ranking tốt nhưng quyết định số output kém | Tối ưu decision layer | Có thể mất Recall; calibration shift | So với always-top-5 | L–M | Sau B2 | `Planned` E14 |
 
 ### Vị trí riêng của direct ID và generative retrieval

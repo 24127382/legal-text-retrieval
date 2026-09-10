@@ -2,11 +2,12 @@
 
 ## Nền tảng và trạng thái
 
-LegalQA có thể tái sử dụng LegalIR; không dựng retrieval stack thứ hai nếu không có ablation. Evidence quality tạo factual ceiling:
+LegalQA tiêu thụ canonical evidence records theo [00 — Data contract và preprocessing](00_data_contract_and_preprocessing.md) và có thể tái sử dụng LegalIR; không dựng retrieval stack thứ hai nếu không có ablation. Corpus/evidence quality tạo factual ceiling trước cả retrieval và generation:
 
 ```text
-question → LegalIR B2 → candidate evidence → reranking/selection
-         → generator → internal verification → submission answer
+raw source → canonical corpus C0 → LegalIR B2 → candidate evidence
+           → reranking/selection → generator
+           → internal verification → submission answer
 ```
 
 B2 và QA0–QA4 đều là `Planned`. Code tồn tại ở nơi nào đó chỉ được gọi là `Code present`; không suy ra `Validated` hay `Benchmarked`.
@@ -17,16 +18,28 @@ Internal QA artifact có thể giữ:
 
 ```text
 answer
-evidence
 document_id
 chunk_id
-selected spans
+structural path
+source_text
+retrieval_text
+selected source span + source offsets when reliable
 retrieval/reranking scores
 verification result
 citations/provenance
 ```
 
-Competition submission adapter chỉ emit object keyed theo sample ID, mỗi value có trường `answer`, đúng như `scoring/LegalQA/scoring.py`. Không tự động append citation/provenance vào answer: extra text được chấm và có thể thay `rouge`/`meteor`. Citation và provenance mặc định là research/debug information, không phải trường submission.
+Mỗi selected span phải recover được tối thiểu `chunk_id → document_id → source document`; structural path/source span được giữ khi parser cung cấp đáng tin. Competition submission adapter chỉ emit object keyed theo sample ID, mỗi value có trường `answer`, đúng như `scoring/LegalQA/scoring.py`. Không tự động append citation/provenance vào answer: extra text được chấm và có thể thay `rouge`/`meteor`. Citation và provenance mặc định là research/debug information, không phải trường submission.
+
+## Retrieval representation khác generator evidence representation
+
+```text
+retrieval representation ≠ generator evidence representation
+```
+
+Retriever có thể index `retrieval_text` đã prepend title/hierarchy để tăng matching. Generator phải nhận `source_text` hoặc selected source span bảo toàn evidence, cộng **chỉ** structural metadata được chọn có chủ đích và đánh dấu riêng. Không được silently feed retrieval-only prefixes/format artifacts vào generator như thể đó là nguyên văn pháp luật.
+
+Chunk boundary và metadata enrichment cũng phải tách: đổi `source_text` span là corpus-boundary experiment; đổi title/hierarchy đưa vào retriever hoặc generator là context-policy experiment. Mỗi QA run phải log corpus fingerprint, evidence adapter và field nào thực sự vào generator context.
 
 ## QA baseline ladder
 
@@ -39,11 +52,11 @@ Competition submission adapter chỉ emit object keyed theo sample ID, mỗi val
 
 ### QA1 — retrieve–rerank–generate
 
-Question đi qua LegalIR B2, candidate documents/chunks được deduplicate, aggregate/rerank và chọn cho context; cùng generator tạo answer. So với RAG không rerank trên cùng retrieval output để đo giá trị selection/reranking. Citation/provenance nằm trong internal record.
+Question đi qua LegalIR B2 trên canonical corpus đã qua integrity gate. Candidate documents/chunks được deduplicate, aggregate/rerank và chuyển từ retrieval records thành source-preserving generator evidence; cùng generator tạo answer. So với RAG không rerank trên cùng retrieval output để đo giá trị selection/reranking. Citation/provenance nằm trong internal record.
 
 ### QA2 — extract-then-generate
 
-Evidence selector lấy span/article/clause hỗ trợ trước generation. So với full-chunk context trên cùng retrieved evidence và cùng context budget. Mục tiêu giả thuyết là giảm distractor, giữ wording pháp lý và không bỏ điều kiện.
+Evidence selector lấy source span/article/clause hỗ trợ trước generation. So với full-`source_text` chunk context trên cùng retrieved evidence và cùng context budget. Mục tiêu giả thuyết là giảm distractor, giữ wording pháp lý và không bỏ điều kiện; selected span phải map lại được về source evidence.
 
 ### QA3 — verifier
 
@@ -62,7 +75,7 @@ question + gold evidence      → same generator/prompt → oracle answer
 question + retrieved evidence → same generator/prompt → end-to-end answer
 ```
 
-Giữ generator, decoding, prompt, context policy và parser giống nhau.
+Giữ generator, decoding, prompt, context policy, canonical corpus/evidence adapter và parser version giống nhau.
 
 - Oracle cao, end-to-end thấp: retrieval/evidence selection là candidate bottleneck.
 - Oracle cũng thấp: generator/reasoning/realization có thể là bottleneck, hoặc gold mapping cần audit lại.
@@ -98,6 +111,6 @@ Long-context QA là diagnostic/candidate; context lớn có thể tăng distract
 
 ## Evidence representation và reporting
 
-Mỗi evidence item nên giữ `document_id`, `chunk_id`, title/parent hierarchy, offsets, retrieval branch, stage scores và selected spans. Đây là internal schema hypothesis, không phải competition submission schema. Context budget phải đo theo tokenizer generator; audit việc một document chiếm quá nhiều budget.
+Mỗi evidence item nên giữ `document_id`, `chunk_id`, structural path, `source_text`, `retrieval_text`, reliable offsets, retrieval branch, stage scores và selected source spans. Đây là internal conceptual contract, không phải competition submission schema. Context budget phải đo theo generator tokenizer; audit việc enrichment hoặc một document chiếm quá nhiều budget và report truncation riêng.
 
 Báo riêng official `rouge`/`meteor` và internal evidence/support metrics theo [QA experiment matrix](05_experiment_map.md). Không trình bày internal factuality result như competition score.

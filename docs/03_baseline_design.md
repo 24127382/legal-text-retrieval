@@ -3,11 +3,12 @@
 ## Nguyên tắc và trạng thái
 
 ```text
-LegalIR: maximize candidate coverage first,
+Data:    freeze an auditable canonical corpus first.
+LegalIR: maximize candidate coverage next,
          then allocate at most five submission slots.
 ```
 
-Retriever mới hữu ích chủ yếu khi tăng candidate coverage hoặc tạo lỗi bổ sung. Reranker mới hữu ích chủ yếu khi candidate coverage đã đủ cao nhưng final subset vẫn mất gold. B0 → B1 → B2 → B3 là research ladder, không phải tuyên bố các hệ thống đã được triển khai hay benchmark.
+Retriever mới hữu ích chủ yếu khi tăng candidate coverage hoặc tạo lỗi bổ sung. Reranker mới hữu ích chủ yếu khi candidate coverage đã đủ cao nhưng final subset vẫn mất gold. `C0 → B0 → B1 → B2 → B3` là research ladder, không phải tuyên bố các cấu hình/hệ thống đã được triển khai, validate hay benchmark.
 
 Trạng thái dùng trong tài liệu:
 
@@ -18,7 +19,25 @@ Trạng thái dùng trong tài liệu:
 - `Research candidate`: đáng khảo sát nhưng chưa nằm trong baseline experiment hiện tại.
 - `Speculative`: chi phí/rủi ro cao hoặc cơ sở hiện tại yếu.
 
-## Năm tầng quyết định cần tách riêng
+## C0 — canonical corpus baseline
+
+```text
+raw data → D00 audit → D01 minimal normalization → D02 parser QC
+         → deterministic retrieval units + provenance → D06 integrity gate
+         → C0 fixed corpus manifest
+```
+
+`C0` là configuration preprocessing/corpus cố định để các LegalIR experiments so sánh được; **không phải machine-learning model** và không tuyên bố chunking strategy tối ưu. C0 tối thiểu phải có canonical document manifest, chunk/evidence manifest, `source_text`/`retrieval_text` distinction, chunk→document→source provenance, preprocessing config, input/corpus fingerprints và validation report. Contract chi tiết ở [00 — Data contract và preprocessing](00_data_contract_and_preprocessing.md).
+
+Baseline C0 đầu tiên phải đơn giản, deterministic và auditable. Parser/chunker/validator trong `src/` là `Code present`; C0 vẫn `Planned` cho đến khi D00/D01/D02 và D06 cung cấp artifact đạt gate.
+
+Quy tắc attribution:
+
+- khi so hai LegalIR algorithms, giữ corpus representation và corpus fingerprint fixed;
+- khi nghiên cứu corpus representation, giữ downstream retriever, aggregation và final-selection stack fixed;
+- chunk boundary và hierarchy/title enrichment là hai independent axes, không đổi cùng một run.
+
+## Năm tầng quyết định LegalIR cần tách riêng
 
 1. **Chunk retrieval**: lấy các đoạn có score/rank theo query.
 2. **Candidate document construction**: map chunk về `document_id`, deduplicate document và giữ provenance của các chunk hỗ trợ.
@@ -31,13 +50,15 @@ Thứ tự reranking và aggregation là một independent variable: có thể r
 ## B0 — lexical floor
 
 ```text
+C0 fixed corpus
+      ↓
 query → BM25 chunk/document retrieval
       → candidate document construction
       → document aggregation
       → final subset (1–5 document IDs)
 ```
 
-Mục đích: tạo classical baseline dễ debug cho exact term, số hiệu văn bản, Điều/Khoản/Điểm và tên luật. Tokenization/normalization tiếng Việt, retrieval unit và aggregation là independent variables phải được log.
+Mục đích: tạo classical baseline dễ debug cho exact term, số hiệu văn bản, Điều/Khoản/Điểm và tên luật. B0 dùng một C0 fingerprint cố định. Query tokenization/BM25 parameters và aggregation có thể được ablate có kiểm soát; normalization, retrieval-unit boundary hoặc enrichment chỉ đổi trong experiment Data & Corpus riêng với downstream B0 fixed.
 
 **Trạng thái:** `Planned`. Repository có thể chứa prototype liên quan, nhưng sự hiện diện của code không biến B0 thành `Validated` hay `Benchmarked`.
 
@@ -116,7 +137,7 @@ document scores
 | Rank aggregation | Hợp rank của các chunk | Mất score magnitude. |
 | Learned aggregator | Học từ score, rank, metadata, số chunk hỗ trợ | Dễ overfit; cần split/labels đáng tin. |
 
-Báo diagnostics ở cả chunk và document level. Title/parent enrichment là representation variant; không tự động thay chunk boundaries và phải kiểm tra truncation, duplication, leakage.
+Báo diagnostics ở cả chunk và document level. Title/parent enrichment là `retrieval_text` representation variant; không được overwrite `source_text`, không tự động thay chunk boundaries và phải kiểm tra expansion, truncation, duplication, leakage.
 
 ## Official scorer và final subset
 
@@ -134,4 +155,4 @@ Không có artifact trong repository chứng minh recall là primary metric hay 
 
 ## Reproducibility contract
 
-Mỗi baseline run phải log: commit; data/split fingerprint; preprocessing; chunk/document index; model revision; tokenizer/max sequence length; candidate depths; score normalization; fusion; construction/deduplication; aggregation; reranker scope/depth; final-k rule; seed; hardware; runtime; index size; scorer artifact/hash.
+Mỗi baseline run phải log: commit; input data/split fingerprint; preprocessing config/version; canonical corpus fingerprint; document/chunk manifests; chunk→document mapping; index fingerprint và item-count/ID consistency; model revision; tokenizer/max sequence length; candidate depths; score normalization; fusion; construction/deduplication; aggregation; reranker scope/depth; final-k rule; seed; hardware; runtime; index size; scorer artifact/hash.
