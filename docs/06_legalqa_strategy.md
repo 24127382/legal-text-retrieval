@@ -1,84 +1,103 @@
 # 06 — Chiến lược LegalQA
 
-## Nền tảng
+## Nền tảng và trạng thái
 
-LegalQA tái sử dụng LegalIR; không dựng retrieval stack thứ hai mà không có ablation. Evidence quality tạo factual ceiling:
+LegalQA có thể tái sử dụng LegalIR; không dựng retrieval stack thứ hai nếu không có ablation. Evidence quality tạo factual ceiling:
 
 ```text
-question → LegalIR B2 → reranked evidence → evidence selection
-         → LLM → concise grounded answer → verification → final answer
+question → LegalIR B2 → candidate evidence → reranking/selection
+         → generator → internal verification → submission answer
 ```
 
-Baseline này là `Planned`; `main` chưa có generator, evidence selector hay verifier.
+B2 và QA0–QA4 đều là `Planned`. Code tồn tại ở nơi nào đó chỉ được gọi là `Code present`; không suy ra `Validated` hay `Benchmarked`.
+
+## Internal record khác competition submission
+
+Internal QA artifact có thể giữ:
+
+```text
+answer
+evidence
+document_id
+chunk_id
+selected spans
+retrieval/reranking scores
+verification result
+citations/provenance
+```
+
+Competition submission adapter chỉ emit object keyed theo sample ID, mỗi value có trường `answer`, đúng như `scoring/LegalQA/scoring.py`. Không tự động append citation/provenance vào answer: extra text được chấm và có thể thay `rouge`/`meteor`. Citation và provenance mặc định là research/debug information, không phải trường submission.
 
 ## QA baseline ladder
 
 ### QA0 — controls
 
-- Closed-book zero-shot: đo parametric-only floor, không dùng làm grounded solution.
-- Gold evidence + zero/few-shot generator: oracle control.
-- Prompt phải cố định, versioned; output không chứa chain-of-thought dài.
+- **Closed-book**: cùng generator chỉ dùng question; đo parametric-only control, không được gọi là grounded solution.
+- **Gold evidence + same generator**: oracle control **chỉ khi** dataset hoặc artifact dẫn xuất cung cấp mapping gold evidence đáng tin và đã được audit.
+- Nếu không có reliable mapping, ghi oracle là unavailable; không thay bằng retrieved evidence rồi gọi là gold.
+- Prompt, decoding, generator revision và output parser phải cố định/versioned.
 
 ### QA1 — retrieve–rerank–generate
 
-Question đi qua LegalIR B2, deduplicate/rerank evidence, rồi LLM sinh câu trả lời ngắn kèm citation/trace tới `document_id` và chunk. So sánh với standard RAG không rerank để đo giá trị của evidence ordering.
+Question đi qua LegalIR B2, candidate documents/chunks được deduplicate, aggregate/rerank và chọn cho context; cùng generator tạo answer. So với RAG không rerank trên cùng retrieval output để đo giá trị selection/reranking. Citation/provenance nằm trong internal record.
 
 ### QA2 — extract-then-generate
 
-Evidence extractor chọn span/article/clause hỗ trợ trước generation. So với full-chunk context trên cùng retrieved evidence. Mục tiêu là giảm distractor, giữ wording pháp lý và tránh bỏ sót điều kiện.
+Evidence selector lấy span/article/clause hỗ trợ trước generation. So với full-chunk context trên cùng retrieved evidence và cùng context budget. Mục tiêu giả thuyết là giảm distractor, giữ wording pháp lý và không bỏ điều kiện.
 
 ### QA3 — verifier
 
-Tách answer thành claims, kiểm tra mỗi claim có evidence support bằng citation rule hoặc NLI-style verifier. Unsupported claim bị loại, sửa hoặc chuyển answer sang trạng thái thiếu bằng chứng. Verifier model cũng cần domain validation; confidence của verifier không phải ground truth.
+Tách draft answer thành claims và kiểm tra support từ evidence. Policy có thể giữ/sửa/loại claim hoặc abstain, nhưng phải ablate trên cùng draft candidates. Verifier confidence không phải ground truth; cần domain validation/manual audit riêng.
 
-### QA4 — metric-aware realization
+### QA4 — metric-aware answer realization
 
-Sau khi factuality ổn định, ablate concise canonical formatting, terminology preservation và output length. METEOR/ROUGE-L alignment không được thay factual verifier.
+Sau khi factual grounding được kiểm soát, ablate concise/canonical wording, terminology preservation và answer length. Tối ưu `rouge`/`meteor` không được thay thế factual verifier hoặc làm rơi điều kiện pháp lý.
 
-## Oracle experiment bắt buộc
+## Oracle comparison có điều kiện
+
+Khi reliable gold-evidence mapping tồn tại:
 
 ```text
 question + gold evidence      → same generator/prompt → oracle answer
 question + retrieved evidence → same generator/prompt → end-to-end answer
 ```
 
-- Oracle mạnh, end-to-end yếu: retrieval/evidence selection là bottleneck.
-- Oracle cũng yếu: generator, reasoning hoặc output realization là bottleneck.
-- Oracle factual nhưng metric thấp: kiểm tra reference variability/format trước khi đổi retrieval.
-- Retrieved evidence có gold nhưng answer sai: đây không phải retrieval miss; inspect selection/grounding.
+Giữ generator, decoding, prompt, context policy và parser giống nhau.
 
-Giữ generator, decoding, prompt và output parser giống nhau để comparison có ý nghĩa.
+- Oracle cao, end-to-end thấp: retrieval/evidence selection là candidate bottleneck.
+- Oracle cũng thấp: generator/reasoning/realization có thể là bottleneck, hoặc gold mapping cần audit lại.
+- Oracle factual nhưng official metric thấp: kiểm tra reference variability/tokenizer/format trước khi thay retrieval.
+- Retrieved context đã có gold nhưng answer sai: không gọi là retrieval miss; inspect selection/grounding.
+
+Các diễn giải này là decision rules cho experiment, không phải validated results.
+
+## Official evaluation
+
+Scorer trả macro `rouge` (bundled ROUGE-L F-measure) và `meteor` (NLTK METEOR trên whitespace tokens). Không có artifact trong repository xác nhận metric priority. Faithful local evaluation phải reuse organizer scorer/tokenizer; đặc biệt bundled ROUGE tokenizer chỉ giữ ASCII `[a-z0-9]`. Xem contract đầy đủ tại [04 — Evaluation và diagnostics](04_evaluation_and_diagnostics.md).
+
+Factuality, evidence coverage, citation validity, provenance completeness và claim-support là internal diagnostics, không phải official score.
 
 ## Advanced research theo failure mode
 
-| Direction | Chỉ GO khi | Câu hỏi kiểm chứng |
-|---|---|---|
-| Extractive QA | Reference có thể map đáng kể về source spans | Copy span có đủ answer coverage không? |
-| FiD | Nhiều query thật sự cần nhiều passages | Multi-passage fusion hơn concat ở cùng evidence budget? |
-| Multi-query/query rewrite | Retrieval miss do lay language/missing facet | Unique evidence có tăng mà drift được kiểm soát? |
-| HyDE-RAG | Query–law style gap rõ | Auxiliary HyDE có recover evidence ngoài original? |
-| Iterative RAG / IRCoT | Multi-hop/compositional subset đủ lớn | Bước retrieve mới có thêm necessary evidence? |
-| Self-RAG / CRAG | Retrieval quality thay đổi mạnh theo query | Controller/evaluator có chọn đúng khi retrieve/correct? |
-| Answer best-of-N | Generator variance là lỗi lớn | Verifier có chọn answer tốt hơn ổn định? |
-| SFT / LoRA / QLoRA | QA labels chất lượng và split đủ | Gain là factuality hay chỉ style overlap? |
-| DAPT | Domain language gap được chứng minh | Continued pretraining giúp oracle và retrieved QA? |
-| Synthetic QA | Có filtering và provenance | Synthetic distribution có giống target, false labels bao nhiêu? |
-| GraphRAG | Cross-reference graph precision cao, multi-hop có thật | Graph evidence thêm unique support hay thêm noise? |
+| Direction | Chỉ GO khi | Câu hỏi kiểm chứng | Status |
+|---|---|---|---|
+| Extractive QA | Reference map được về source spans | Copy span đủ answer coverage? | `Research candidate` |
+| FiD | Nhiều sample thật sự cần nhiều passages | Multi-passage fusion hơn concat ở cùng budget? | `Research candidate` |
+| Multi-query/rewrite | Retrieval miss do lay language/missing facet | Unique evidence tăng mà drift được kiểm soát? | `Research candidate` |
+| HyDE-RAG | Query–law style gap rõ | Auxiliary branch recover evidence ngoài original? | `Research candidate` |
+| Iterative RAG / IRCoT | Multi-hop subset đủ lớn | Bước retrieve mới thêm necessary evidence? | `Research candidate` |
+| Self-RAG / CRAG | Retrieval quality biến thiên mạnh | Controller chọn đúng khi retrieve/correct? | `Research candidate` |
+| Answer best-of-N | Generator variance là lỗi lớn | Verifier chọn answer tốt hơn ổn định? | `Research candidate` |
+| SFT / LoRA / QLoRA | QA labels và split đủ tin cậy | Gain là support hay chỉ lexical style? | `Research candidate` |
+| DAPT | Domain gap được chứng minh | Continued pretraining giúp cả oracle/retrieved QA? | `Research candidate` |
+| Synthetic QA | Có filtering/provenance | False-label rate và target similarity chấp nhận được? | `Research candidate` |
+| GraphRAG | Graph precision cao và multi-hop có thật | Graph thêm unique support hay noise? | `Speculative` |
+| Joint IR–QA | IR/QA controls đã benchmark và leakage guard rõ | Feedback cải thiện evidence hay học shortcut? | `Speculative` |
 
-Long-context QA là diagnostic/auxiliary: context lớn không bảo đảm model dùng evidence ở mọi vị trí và có thể tăng distractors.
+Long-context QA là diagnostic/candidate; context lớn có thể tăng distractor và không bảo đảm model dùng evidence ở mọi vị trí.
 
-## Evidence representation
+## Evidence representation và reporting
 
-Mỗi evidence item giữ: `document_id`, `chunk_id`, title/parent hierarchy, char offsets, retrieval branch, stage scores và selected span. Context budget phải tính theo tokenizer của generator. Khi một document có nhiều chunks, tránh để một document chiếm hết budget nếu query cần multi-document evidence.
+Mỗi evidence item nên giữ `document_id`, `chunk_id`, title/parent hierarchy, offsets, retrieval branch, stage scores và selected spans. Đây là internal schema hypothesis, không phải competition submission schema. Context budget phải đo theo tokenizer generator; audit việc một document chiếm quá nhiều budget.
 
-## Joint IR–QA optimization — dài hạn
-
-```text
-retrieval ↔ evidence supervision ↔ answer generation
-```
-
-Các hướng: train retriever từ answer/evidence supervision; jointly optimize evidence relevance và QA quality; dùng QA failures để mine retrieval negatives. Đây không phải baseline đầu tiên vì credit assignment khó và dễ leakage: trước hết cần B2, oracle QA và end-to-end QA ổn định để biết feedback cải thiện retrieval thật hay học shortcut từ answer/reference.
-
-## Báo cáo QA
-
-Ngoài METEOR/ROUGE-L official, báo: gold-evidence coverage, selected-evidence precision/recall nếu labels cho phép, citation validity, claim support rate, abstention/unsupported rate, answer length và error split retrieval miss / selection error / generation-grounding error / formatting error.
+Báo riêng official `rouge`/`meteor` và internal evidence/support metrics theo [QA experiment matrix](05_experiment_map.md). Không trình bày internal factuality result như competition score.

@@ -1,6 +1,6 @@
 # 08 — Tài liệu tham khảo
 
-Danh mục giữ các nguồn của research document gốc và bổ sung PRF, generative retrieval, distillation/pseudo-labeling. Link ưu tiên publisher, conference hoặc ACL Anthology. Thông tin competition có thể thay đổi; luôn đối chiếu rules/scorer hiện hành.
+Danh mục này tập hợp các nguồn hỗ trợ cho method space và research roadmap. Link ưu tiên publisher, conference hoặc ACL Anthology. Citation web không quyết định scoring behavior: code trong `scoring/` vẫn là nguồn chính thức trong repository, còn rules bên ngoài phải được fingerprint theo thời điểm dùng.
 
 ## Competition và Vietnamese legal/IR
 

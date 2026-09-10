@@ -2,7 +2,7 @@
 
 ## Cách đọc taxonomy
 
-**Candidate retrieval** tạo candidate pool rộng; **fusion** hợp nhất nhiều rank/score; **reranking** chấm lại một pool nhỏ; **final selection** quyết định output. Chi phí: `L` thấp, `M` vừa, `H` cao, `VH` rất cao. Priority là thứ tự nghiên cứu tương đối, không phải dự đoán chắc chắn về gain.
+**Candidate retrieval** tạo candidate pool rộng; **fusion** hợp nhất nhiều rank/score; **reranking** chấm lại một pool nhỏ; **final selection** quyết định output. Chi phí: `L` thấp, `M` vừa, `H` cao, `VH` rất cao. Priority là thứ tự nghiên cứu tương đối, không phải dự đoán chắc chắn về gain. `Code present` chỉ ghi nhận implementation/prototype quan sát được; không đồng nghĩa `Validated` hoặc `Benchmarked`.
 
 ## Method map — LegalIR
 
@@ -10,15 +10,15 @@
 |---|---|---|---|---|---|---:|---|---|
 | Exact/rule-based citation matching | Parse số luật, Điều/Khoản/Điểm, tên văn bản rồi exact/normalized match | Dense làm mờ identifier | Precision cao, debug được | Không bắt implicit concept/paraphrase | Auxiliary feature cho BM25/dense | L | Cao sau B0 | `Research candidate` |
 | TF-IDF / n-gram | Sparse lexical vector trên token/character n-gram | Rare terms, OCR/tokenization variants | Rẻ, interpretable | Semantic gap, length sensitivity | Diversity control cho BM25 | L | Trung bình | `Research candidate` |
-| BM25 / BM25F | Probabilistic term weighting; BM25F weight theo field | Exact terminology, citations, title | Classical strong baseline | Vocabulary mismatch; field tuning | Core complement của dense | L–M | Rất cao | `Existing branch` |
+| BM25 / BM25F | Probabilistic term weighting; BM25F weight theo field | Exact terminology, citations, title | Classical strong baseline | Vocabulary mismatch; field tuning | Core complement của dense | L–M | Rất cao | `Planned` E00 |
 | SPLADE | Transformer học sparse term expansion/weight | Vocabulary mismatch nhưng vẫn cần inverted index | Sparse, interpretable phần nào | Train/index phức tạp; có thể correlate BM25 | Chỉ giữ nếu unique-gold/union recall tăng | H | Cao, Phase 5 | `Planned` E09 |
-| Dense bi-encoder | Encode query/document độc lập, nearest-neighbor | Paraphrase và semantic mismatch | Retrieval nhanh sau indexing | Nén nuance; identifier yếu | Core complement của lexical | M–H | Rất cao | `Implemented` |
+| Dense bi-encoder | Encode query/document độc lập, nearest-neighbor | Paraphrase và semantic mismatch | Retrieval nhanh sau indexing | Nén nuance; identifier yếu | Core complement của lexical | M–H | Rất cao | `Code present`; E01 `Planned` |
 | Multilingual dense / multilingual-E5 | Multilingual embedding objective | Cross-lingual/general Vietnamese representation gap | Strong zero-shot candidate | Chưa chắc hiểu legal nuance | Comparison với BGE-M3 | M–H | Trung bình | `Research candidate` |
-| BGE-M3 | Multilingual dense; family hỗ trợ sparse/multi-vector | Paraphrase tiếng Việt, multi-granularity | Backbone hiện có; nhiều modes | Modes cùng backbone có correlated errors | Dense core; modes khác cần ablation | M–H | Rất cao | Dense mode `Implemented` |
+| BGE-M3 | Multilingual dense; family hỗ trợ sparse/multi-vector | Paraphrase tiếng Việt, multi-granularity | Backbone hiện có; nhiều modes | Modes cùng backbone có correlated errors | Dense core; modes khác cần ablation | M–H | Rất cao | Dense mode `Code present`; E01 `Planned` |
 | ColBERT / late interaction | Token embeddings + MaxSim | Single-vector information bottleneck | Fine-grained query–token match | Index lớn, scoring nặng | Potential unique branch so với BM25/dense | H–VH | Cao, Phase 5 | `Planned` E10 |
 | Weighted score fusion | Normalize rồi cộng score theo weight | Single-retriever blind spots | Dùng confidence magnitude | Nhạy scale/calibration | So trực tiếp với RRF | L | Rất cao | `Planned` E02 |
-| RRF | Cộng reciprocal rank giữa lists | Heterogeneous score scales | Robust, đơn giản | Bỏ score magnitude; `k` cần tune | So trực tiếp với alpha fusion | L | Rất cao | `Existing branch`; E03 |
-| Cross-encoder reranking | Joint encode query–candidate | Similar laws bị first-stage misorder | Full interaction, precision tốt | Chậm; không cứu retrieval miss | Sau candidate recall đủ cao | H | Rất cao | `Existing branch`; E04 |
+| RRF | Cộng reciprocal rank giữa lists | Heterogeneous score scales | Robust, đơn giản | Bỏ score magnitude; `k` cần tune | So trực tiếp với alpha fusion | L | Rất cao | `Planned` E03 |
+| Cross-encoder reranking | Joint encode query–candidate | Similar laws bị first-stage misorder | Full interaction, precision tốt | Chậm; không cứu retrieval miss | Sau candidate recall đủ cao | H | Rất cao | `Planned` E04 |
 | LLM reranking | Pointwise/pairwise/listwise instruction scoring | Complex legal relevance | Flexible reasoning | Cost, variance, prompt bias | Late-stage challenger cho CE | VH | Thấp ban đầu | `Research candidate` |
 | Query rewriting | Viết lay query thành legal-search query | Lay-language và terminology mismatch | Tăng lexical/semantic match | Query drift, fabricated condition | Luôn giữ original branch | M–H | Sau B2 | `Planned` E11 |
 | Multi-query retrieval | Sinh facets/paraphrases, retrieve rồi fuse | Query thiếu facet, multi-aspect | Tăng coverage/diversity | Noise và compute | Original + variants, đo overlap | H | Sau B2 | `Planned` E11 |
@@ -26,8 +26,8 @@
 | PRF / RM3 | Retrieve lần 1, lấy term từ top docs, expand rồi retrieve lần 2 | Vocabulary mismatch dựa trên corpus | Corpus-grounded hơn generative rewrite | Query drift nếu initial results sai | Nhánh phụ giữ original query | M | Phase 5 | `Planned` E12 |
 | Neural PRF | Tổng hợp representation từ top candidates | Semantic expansion khó biểu diễn bằng term | Học feedback giàu hơn | Train/cost, feedback drift | Auxiliary dense branch | H | Sau RM3 | `Research candidate` |
 | Title enrichment | Prepend/weight document title | Chunk thiếu scope/topic | Rẻ, legal-specific, prior work hỗ trợ | Title noisy/lặp gây score bias | Orthogonal với backbone | L | Rất cao, Phase 2 | `Planned` E05 |
-| Legal hierarchy/structure enrichment | Thêm parent law/chapter/article context | Clause bị mất context | Giữ phạm vi pháp lý | Context noise/truncation | Cùng title nhưng ablate riêng | L–M | Cao, Phase 2 | Metadata `Implemented`; retrieval use `Planned` |
-| Hierarchical chunking | Chia theo law→chapter→article→clause | Long-document truncation/dilution | Bảo toàn semantic boundary | Cần document aggregation | Corpus-representation axis | M | Core | `Implemented` |
+| Legal hierarchy/structure enrichment | Thêm parent law/chapter/article context | Clause bị mất context | Giữ phạm vi pháp lý | Context noise/truncation | Cùng title nhưng ablate riêng | L–M | Cao, Phase 2 | Metadata `Code present`; retrieval E05 `Planned` |
+| Hierarchical chunking | Chia theo law→chapter→article→clause | Long-document truncation/dilution | Bảo toàn semantic boundary | Cần document aggregation | Corpus-representation axis | M | Core | `Code present` |
 | Metadata-aware retrieval | Boost/filter theo loại, cơ quan, ngày, hiệu lực | Temporal/type ambiguity | Structured signal | Hard filter có thể loại gold | Soft feature cho LTR/reranker | M | Data-dependent | `Research candidate` |
 | Contrastive retriever fine-tuning | Kéo positive gần, negative xa | General-domain relevance mismatch | Adapt retrieval objective | False negatives/overfit | Sau stable B2 | H | Phase 4 | `Planned` E08 |
 | Hard-negative mining | Train trên near-miss candidates | Similar-law decision boundary | Supervision giàu thông tin | Unlabeled relevant bị đẩy xa | Kỹ thuật train, không phải distillation | H | Phase 3–4 | `Planned` E07/E08 |
@@ -57,7 +57,7 @@ Hard-negative mining quyết định **example nào** đưa vào train; distilla
 
 | Family | Mechanism | Failure mode giải quyết | Strength | Weakness / risk | Complementarity | Cost | Priority | Repo status |
 |---|---|---|---|---|---|---:|---|---|
-| Closed-book baseline | LLM chỉ dùng parameters | Đo giá trị tăng thêm của retrieval | Control rẻ, rõ | Không provenance/version guarantee | Negative control cho RAG | M | Bắt buộc đo | `Research candidate` |
+| Closed-book baseline | LLM chỉ dùng parameters | Đo giá trị tăng thêm của retrieval | Control rẻ, rõ | Không provenance/version guarantee | Negative control cho RAG | M | Bắt buộc đo | `Planned` QA0 |
 | Zero/few-shot prompting | Instruction/examples, không update weights | Thiếu task adaptation | Nhanh, dễ ablate | Prompt variance/context limits | Baseline generator | M | Cao | `Planned` QA0 |
 | Standard RAG | Retrieve passages rồi generate | Parametric knowledge thiếu/không cập nhật | Grounding external corpus | Noise nếu retrieval yếu | Core QA baseline | H | Rất cao | `Planned` QA1 |
 | Retrieve–rerank–generate | Rerank evidence trước generation | Top retrieval chứa distractors | Context precision cao hơn | Ceiling phụ thuộc candidate recall | Dùng trực tiếp LegalIR B2 | H | Cao nhất | `Planned` QA1 |
@@ -71,7 +71,7 @@ Hard-negative mining quyết định **example nào** đưa vào train; distilla
 | IRCoT | Interleave retrieval và chain-of-thought | Multi-step knowledge-intensive QA | Reasoning-guided retrieval | Reasoning drift, latency | Variant của iterative RAG | VH | Có điều kiện | `Research candidate` |
 | Self-RAG | Model quyết định retrieve/critique/generate | Retrieval need/quality không đồng đều | Adaptive self-reflection | Train/implementation phức tạp | Sau measurable QA baseline | VH | Dài hạn | `Research candidate` |
 | CRAG | Đánh giá retrieval rồi correct/expand | Bad retrieved evidence | Explicit corrective path | Evaluator errors, branching cost | Với verifier | VH | Dài hạn | `Research candidate` |
-| Citation-grounded generation | Buộc claims gắn evidence/citation | Unsupported answer | Auditability | Citation đúng vị trí chưa chắc entailment | Với verifier/extractor | H | Cao | `Planned` QA2 |
+| Evidence-grounded internal provenance | Gắn claims với evidence/citation trong internal record | Unsupported answer | Auditability | Citation đúng vị trí chưa chắc entailment; không tự append vào submission | Với verifier/extractor | H | Cao | `Planned` QA2 |
 | Evidence/NLI verifier | Kiểm tra claim được evidence entail | Hallucination/unsupported condition | Factual gate | NLI domain mismatch | Sau generation, có thể rerank | H | Cao | `Planned` QA3 |
 | Long-context QA | Đưa nhiều/full documents vào context | Truncation/missing evidence | Giảm retrieval granularity | Lost-in-the-middle, cost/noise | Diagnostic/auxiliary | VH | Thấp | `Research candidate` |
 | Answer reranking / best-of-N | Sinh N answers rồi score support/quality | Generation variance | Tăng chance answer tốt | Cost; verifier bias | Với grounded verifier | VH | Sau QA2 | `Research candidate` |
@@ -80,7 +80,7 @@ Hard-negative mining quyết định **example nào** đưa vào train; distilla
 | LoRA / QLoRA | Parameter-efficient adaptation | Full fine-tuning quá tốn | Compute/memory thấp hơn | Vẫn overfit; base-model ceiling | PEFT alternative cho SFT | H | Có điều kiện | `Research candidate` |
 | DAPT | Continued legal-domain pretraining | Domain language gap | Legal vocabulary/style | Expensive; gain không bảo đảm | Trước SFT, ablate riêng | VH | Dài hạn | `Research candidate` |
 | Synthetic QA | Teacher sinh question/evidence/answer | Ít supervision | Scale data | Hallucinated labels/style bias | Cần filtering/verifier | H–VH | Có điều kiện | `Research candidate` |
-| Metric-aware answer formatting | Học/đặt format ngắn, canonical | Correct answer nhưng low overlap | Phù hợp METEOR/ROUGE-L | Metric gaming, factuality không tăng | Sau verifier/factuality | L–H | Cao nhưng muộn | `Planned` QA4 |
+| Metric-aware answer formatting | Học/đặt format ngắn, canonical | Correct answer nhưng low overlap | Có thể cải thiện official `meteor`/`rouge` | Metric gaming, factuality không tăng | Sau verifier/factuality | L–H | Cao nhưng muộn | `Planned` QA4 |
 | GraphRAG | Retrieve graph neighborhood + text | Cross-reference/multi-hop | Structured evidence chain | Noisy graph/edge propagation | Chỉ khi graph quality đủ | VH | Dài hạn | `Speculative` |
 | Joint IR–QA optimization | Answer/evidence supervision train retriever; QA failures mine negatives | Pipeline stages tối ưu lệch nhau | Align evidence với answer quality | Credit assignment/leakage/instability | Sau IR và QA controls ổn định | VH | Dài hạn | `Research candidate` |
 
@@ -94,6 +94,6 @@ Tránh cartesian product mọi model × mọi fusion × mọi reranker. Áp dụ
 
 > A new retriever is valuable primarily if it increases candidate recall or produces complementary retrieval errors.
 
-> A new reranker is valuable primarily if candidate recall is already high but final Recall@5 remains substantially lower.
+> A new reranker is valuable primarily if candidate recall is already high but official recall under the maximum-5 output constraint remains substantially lower.
 
 Và luôn giữ invariant: reranker không thể recover gold document chưa vào candidate pool.

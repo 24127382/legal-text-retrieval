@@ -2,82 +2,109 @@
 
 ## Hai task, một evidence bottleneck
 
-**LegalIR** nhận một truy vấn pháp lý tiếng Việt và xếp hạng `document_id` liên quan. **LegalQA** nhận một câu hỏi, tìm căn cứ, rồi sinh câu trả lời ngắn, đúng và được evidence hỗ trợ.
+**LegalIR** (Legal Information Retrieval — truy hồi thông tin pháp luật) nhận một câu hỏi pháp lý và chọn các ID văn bản liên quan. **LegalQA** (Legal Question Answering — hỏi đáp pháp luật) nhận câu hỏi, tìm căn cứ rồi tạo câu trả lời. Hai task cùng chịu một **evidence bottleneck**: nếu văn bản cần thiết không vào candidate pool (tập ứng viên), reranker và generator không thể khôi phục bằng chứng bị thiếu.
 
 ```text
-query/question
-      ↓
-evidence retrieval (shared)
-      ↓
+question
+   ↓
+evidence retrieval
+   ↓
 candidate pool
-      ├─ LegalIR: reranking → final selection → document IDs
-      └─ LegalQA: evidence selection → generation → verification → answer
+   ├─ LegalIR: document construction → aggregation/reranking → final subset
+   └─ LegalQA: evidence selection → grounded generation → verification → answer
 ```
 
-Hai task không nên được xây như hai hệ độc lập vì cùng chịu một **evidence bottleneck**: nếu tài liệu đúng không vào candidate pool, reranker và generator đều không thể khôi phục nó. Ngược lại, nếu evidence đã có nhưng LegalQA vẫn sai thì lỗi nằm ở evidence selection, reasoning, grounding hoặc answer realization; thay retriever lúc đó có thể không giải quyết đúng nguyên nhân.
+Ngược lại, nếu evidence đã có nhưng LegalQA vẫn sai, lỗi có thể nằm ở chọn đoạn, suy luận, grounding (ràng buộc câu trả lời vào bằng chứng) hoặc answer realization (cách diễn đạt đầu ra). Thay retriever khi đó không nhất thiết giải đúng nguyên nhân.
 
 ## Mục tiêu nghiên cứu
 
 ### LegalIR
 
-1. Tối đa hóa candidate coverage bằng các tín hiệu bổ sung nhau.
+1. Tối đa hóa candidate coverage bằng các tín hiệu truy hồi bổ sung nhau.
 2. Đo candidate recall trước khi tối ưu reranking.
-3. Chuyển chunk-level retrieval thành document-level ranking có kiểm soát.
-4. Phân bổ đúng tối đa 5 vị trí output bằng final selection/calibration.
-5. Thay đổi một major research axis tại một thời điểm.
+3. Phân biệt rõ chunk retrieval, candidate document construction, document aggregation, reranking và final subset selection.
+4. Dùng tối đa năm vị trí output theo đúng scorer chính thức.
+5. Chỉ thay đổi một major research axis trong mỗi thí nghiệm để giữ attribution.
 
 ### LegalQA
 
-1. Tái sử dụng evidence retrieval đã đo được của LegalIR.
-2. Dùng oracle experiment để tách retrieval error khỏi generation error.
-3. Chọn evidence đủ và đúng trước khi tăng reasoning depth.
-4. Chỉ tối ưu format theo metric sau khi factual support được kiểm soát.
+1. Tái sử dụng tầng evidence retrieval đã được đo của LegalIR.
+2. Dùng oracle control khi và chỉ khi có mapping gold evidence đáng tin cậy.
+3. Tách retrieval error, evidence-selection error và generation/grounding error.
+4. Đặt factual grounding trước tối ưu hóa hình thức theo metric.
 
-## Điều đang biết về metric
+## Hành vi chính thức đã xác định từ `scoring/`
 
-Source research ghi nhận:
+### LegalIR
 
-- LegalIR dùng Recall làm metric chính, Precision để phân hạng khi Recall bằng nhau, và output tối đa 5 `document_id` mỗi query; vi phạm giới hạn có thể làm điểm query bằng 0.
-- LegalQA dùng METEOR làm metric chính và ROUGE-L làm metric phụ.
+Submission và reference là các JSON object keyed theo sample/query ID. Với mỗi prediction ID, value phải chứa trường `answer`; `answer` là một list document ID. Tập ID prediction phải khớp tập ID reference để scorer có thể chấm đầy đủ.
 
-Các điểm trên phải được đối chiếu lại với rules và scorer hiện hành trước khi đóng băng protocol. Cho đến khi có scorer artifact/version cụ thể, tài liệu này gọi Recall@5, Precision, METEOR và ROUGE-L là **reported competition metrics**, không tuyên bố implementation cục bộ tương đương official scorer.
+Với query `q`, gọi list dự đoán là `P_q` và list gold là `G_q`:
+
+```text
+valid(q)       := 1 ≤ |P_q| ≤ 5
+recall(q)      := |set(G_q) ∩ set(P_q)| / |G_q|       nếu valid(q), ngược lại 0
+precision(q)   := |set(G_q) ∩ set(P_q)| / |P_q|       nếu valid(q), ngược lại 0
+official score := macro mean của recall(q) và precision(q) trên các sample
+```
+
+Các hệ quả trực tiếp:
+
+- output rỗng hoặc dài hơn 5 nhận recall và precision bằng 0 cho sample đó;
+- overlap dùng set, nên thứ tự ID trong `answer` không trực tiếp ảnh hưởng điểm;
+- duplicate ID không tạo thêm overlap nhưng vẫn chiếm chỗ và vẫn nằm trong mẫu số precision, nên có thể làm giảm precision và làm mất cơ hội đưa một document khác vào tối đa năm slot;
+- cách gọi chính xác cho recall chính thức là **official recall under a maximum-5 output constraint**, không mặc định đồng nhất với local `Recall@5`;
+- scorer trả cả `recall` và `precision`, nhưng repository không chứa artifact có thẩm quyền quy định metric nào là primary hoặc cơ chế tie-break.
+
+### LegalQA
+
+Submission là JSON object keyed theo sample ID; mỗi value phải chứa trường `answer`. Scorer ép reference và prediction qua `str(...)`, rồi trả hai giá trị macro-mean:
+
+- `rouge`: ROUGE-L F-measure từ bundled `rouge_score`, `use_stemmer=False`;
+- `meteor`: NLTK `meteor_score` trên token tạo bằng `.split()`.
+
+Repository không cung cấp artifact có thẩm quyền để suy ra ưu tiên giữa `rouge` và `meteor`. Chi tiết tái tạo metric và tokenizer được quy định tại [04 — Evaluation và diagnostics](04_evaluation_and_diagnostics.md).
+
+## Schema dữ liệu quan sát được
+
+Các JSON hiện có trong `data/LegalIR/` và `data/LegalQA/` đều là object keyed theo sample ID:
+
+- LegalIR train: value có `question` và `answer`, trong đó `answer` là list document ID; public-official giữ cùng hai field và để `answer: null`.
+- LegalQA train: value có `question` và `answer`, trong đó `answer` là chuỗi; public-official giữ cùng hai field và để `answer: null`.
+
+Đây là quan sát trên dữ liệu hiện có, không phải tuyên bố về mọi split hoặc mọi phiên bản tương lai.
 
 ## Known / Unknown / Must Verify
 
 ### Known
 
-- Hai task dùng chung miền văn bản pháp luật tiếng Việt và có thể chia sẻ retrieval stack.
-- `main` có parser, structure-aware chunker, BGE-M3 dense embedding và FAISS chunk retrieval.
-- Existing docs báo cáo corpus khoảng 8,5k documents và khoảng 94,7k chunks.
-- Source research báo cáo LegalIR giới hạn tối đa 5 document IDs và ưu tiên Recall.
-- Code hiện tại dừng ở chunk retrieval; chưa có document-level final selection.
+- Official scorer contract và tên output metric đã có trong `scoring/`.
+- LegalIR và LegalQA có thể chia sẻ tầng retrieval nhưng có submission adapter khác nhau.
+- Code trong `src/` có parser/chunker và prototype dense chunk retrieval; đây là `Code present`, không phải `Validated` hay `Benchmarked`.
+- B2 trong tài liệu là reference design `Planned`, không phải hệ thống đã hoàn thành.
 
 ### Unknown
 
-- Số query train/public/private.
-- Phân bố số relevant documents trên mỗi query.
-- Relevance labels có exhaustive hay không.
-- Phân bố độ dài document thực tế và độ dài sau tokenizer.
-- Mức đầy đủ/chính xác của metadata schema.
-- Có metadata phiên bản, ngày hiệu lực, sửa đổi, bãi bỏ hay không.
-- Quy tắc external model, external data và external API.
-- Latency, memory, hardware hoặc submission-rate constraints.
-- Exact normalization/tokenization của scorer LegalQA.
+- Quy mô và quan hệ chính xác của train/dev/public/private ngoài các file hiện có.
+- Phân bố số gold document mỗi query và mức đầy đủ của relevance labels.
+- Mapping gold evidence cho LegalQA có tồn tại và đủ tin cậy cho oracle hay không.
+- Độ dài document/chunk sau tokenizer, chất lượng metadata và thông tin phiên bản/hiệu lực.
+- Quy tắc external model/data/API; giới hạn latency, memory, hardware và submission rate.
+- NLTK/package version dùng trong môi trường chấm METEOR nếu không được pin ngoài artifact hiện có.
 
-### Must Verify trước baseline chính thức
+### Must verify trước benchmark chính thức
 
-- Rules/scorer hiện hành: giới hạn output, duplicate IDs, order sensitivity, cách tính Recall/Precision và hành vi khi `|G_q| > 5`.
-- Train/dev split chống leakage; public leaderboard không phải validation set duy nhất.
-- Gold-document distribution và dấu hiệu label incompleteness.
-- Mapping ổn định từ chunk ID về document ID và xử lý duplicate chunks.
-- Sự nhất quán giữa encoding lúc index và lúc query, gồm `max_seq_length`.
-- Corpus counts 8.512/94.717 từ artifact tái tạo được, không chỉ từ báo cáo.
-- Metadata title/hierarchy/version có đủ chất lượng để dùng feature hoặc filter.
+- Split manifest/fingerprint và kiểm tra leakage.
+- Gold-document distribution, label-completeness signals và ceiling do tối đa năm output.
+- Mapping chunk → document, deduplication và hành vi với ID sai/missing/extra.
+- Sự nhất quán giữa indexing/query encoding, gồm tokenizer và `max_seq_length`.
+- Gold-evidence mapping của LegalQA trước khi gọi một run là oracle.
+- Local scorer reproduction phải gọi hoặc tái sử dụng trung thực organizer scorer.
 
 ## Tiêu chí thành công của research baseline
 
-Baseline đạt mục đích khi nó trả lời được ba câu hỏi bằng số liệu:
+Baseline đạt mục đích khi artifact tái lập được trả lời:
 
-1. Gold bị mất ở candidate retrieval hay bị misorder ở reranking/final selection?
-2. Mỗi retriever mới có recover gold độc nhất hay chỉ lặp lại cùng candidate?
-3. Với LegalQA, khoảng cách giữa oracle-evidence và retrieved-evidence nằm ở retrieval, evidence selection hay generation?
+1. Gold bị mất ở candidate retrieval hay ở document construction/reranking/final selection?
+2. Retriever mới recover gold độc nhất hay chủ yếu lặp lại candidate cũ?
+3. Với LegalQA, khoảng cách giữa control khả dụng và retrieved-evidence nằm ở retrieval, evidence selection, generation/grounding hay output formatting?
