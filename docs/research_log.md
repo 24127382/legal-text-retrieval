@@ -239,3 +239,176 @@ Gap giữa official-style top-5 recall 0,7616 và candidate Recall@100/200 lần
 **Decision**
 
 Giữ B00 làm lexical reference trên C0. Trước hyperparameter optimization, tạo fixed validation split; trước khi chọn dense/hybrid hay reranker, inspect zero-recall và deep-rank samples để tách coverage failure khỏi ranking failure. Không tự động chuyển sang dense/hybrid và không thay C0 từ result này.
+
+## S00 — Fixed LegalIR train/dev/holdout split
+
+**Date / source state:** 2026-09-13 / working tree after `1fcc0c7`
+
+**Question**
+
+Có thể freeze một local held-out protocol deterministic mà không để exact-duplicate raw questions đi qua split boundaries hay không?
+
+**Assignment rule**
+
+- Group key là exact raw `question`; không lowercase, normalize hay fuzzy/semantic group. Nếu `question` missing hoặc không phải string, group key fallback về unique sample ID. Snapshot hiện tại có 0 trường hợp cần fallback.
+- Tính SHA-256 trên UTF-8 group key, lấy 8 hex digits đầu, modulo 100: bucket 0–69 vào train, 70–84 vào dev, 85–99 vào holdout.
+- Rule không dùng Python `hash()`, random seed hay retrieval scores.
+
+**Result**
+
+| Split | Samples | Fraction |
+|---|---:|---:|
+| Train | 4.941 | 0,705857 |
+| Dev | 1.036 | 0,148000 |
+| Holdout | 1.023 | 0,146143 |
+| Full | 7.000 | 1,000000 |
+
+- Sample-ID overlap bằng 0 cho train↔dev, train↔holdout và dev↔holdout.
+- Exact raw-question overlap bằng 0 cho cả ba pair.
+- Union của ba ID sets bằng đúng toàn bộ 7.000 original sample IDs; mỗi ID được assign đúng một lần.
+
+Gold-document-count distribution dưới đây dùng trực tiếp `len(answer)`:
+
+| Gold count | Full | Train | Dev | Holdout |
+|---:|---:|---:|---:|---:|
+| 1 | 6.447 | 4.555 | 949 | 943 |
+| 2 | 485 | 338 | 79 | 68 |
+| 3 | 53 | 35 | 7 | 11 |
+| 4 | 14 | 12 | 1 | 1 |
+| 5 | 1 | 1 | 0 | 0 |
+
+Drift quan sát được nhỏ; split không được search hay điều chỉnh để match distribution.
+
+**Manifest**
+
+- Path: `configs/legalir_split_v1.json`.
+- Raw source SHA-256: `c39cde9e74977e350f1456e7d487aafe67d2bcbaa4fa26fcabd557fe635635b7`.
+- Manifest SHA-256: `0fedb23fe0dfc447f3c2b321f8b6d9092c57868fe9f667df18ba00ef13eb1ccf`.
+
+**Decision**
+
+Freeze `legalir_split_v1`. Train dành cho supervised/domain-adaptation experiments; dev dành cho error inspection, hyperparameter tuning và method selection; holdout chỉ dành cho aggregate local held-out evaluation, không phải competition test set và không được inspect theo sample trong lúc phát triển method.
+
+## B00-V — BM25 reference on fixed split
+
+**Date / source state:** 2026-09-13 / working-tree run after `1fcc0c7`
+
+**Question**
+
+Pattern của full-train zero-shot B00 có giữ trên fixed dev/holdout hay không, và dev failures nghiêng về candidate coverage hay document ranking?
+
+**Fixed control**
+
+Giữ nguyên B00/C0: character windows 2.000/overlap 200; `bm25s==0.3.11`, `method="lucene"`, `k1=1.5`, `b=0.75`; lowercase Unicode `\w+`; `top_k_chunks=2000`; max-chunk-score document aggregation; giữ top 200 unique documents. Index build trên toàn bộ 8.532-document competition corpus, tạo 199.816 C0 chunks. Chỉ query subset thay đổi.
+
+### DEV metrics
+
+| K | Candidate Recall@K | Zero-recall rate | Full-recall rate |
+|---:|---:|---:|---:|
+| 10 | 0,836631 | 0,143822 | 0,818533 |
+| 20 | 0,902751 | 0,081081 | 0,888031 |
+| 50 | 0,935489 | 0,051158 | 0,922780 |
+| 100 | 0,953427 | 0,036680 | 0,943050 |
+| 200 | 0,974743 | 0,018340 | 0,967181 |
+
+- MRR: 0,623351.
+- Official-style top-5 precision: 0,162355; official-style top-5 recall: 0,761503.
+- Zero/full recall at 100: 38/977 queries. Zero/full recall at 200: 19/1.002 queries.
+- Unique documents từ 2.000-chunk pool: min 143; median 674,5; p95 984; 2 queries dưới 200 unique documents.
+
+### HOLDOUT metrics
+
+| K | Candidate Recall@K | Zero-recall rate | Full-recall rate |
+|---:|---:|---:|---:|
+| 10 | 0,838058 | 0,140762 | 0,816227 |
+| 20 | 0,882372 | 0,099707 | 0,864125 |
+| 50 | 0,929782 | 0,055718 | 0,914956 |
+| 100 | 0,952183 | 0,036168 | 0,940371 |
+| 200 | 0,970023 | 0,020528 | 0,960899 |
+
+- MRR: 0,591739.
+- Official-style top-5 precision: 0,156598; official-style top-5 recall: 0,744298.
+- Zero/full recall at 100: 37/962 queries. Zero/full recall at 200: 21/983 queries.
+- Unique documents từ 2.000-chunk pool: min 170; median 684; p95 978,8; 1 query dưới 200 unique documents.
+- Chỉ aggregate metrics được ghi; không inspect câu hỏi hay list sample IDs của holdout.
+
+### DEV error diagnostics
+
+- Coverage failure (`Recall@200 == 0`): 19/1.036 queries, fraction 0,018340.
+- Ranking failure (có gold trong top 200 nhưng không có gold trong top 5): 207/1.036 queries, fraction 0,199807.
+
+First-gold rank trên 1.017 dev queries có ít nhất một gold trong top 200: median 1; p90 13; p95 29,2; max 188.
+
+| First-gold rank bin | Queries |
+|---|---:|
+| 1 | 510 |
+| 2–5 | 300 |
+| 6–10 | 77 |
+| 11–20 | 65 |
+| 21–50 | 31 |
+| 51–100 | 15 |
+| 101–200 | 19 |
+| Not found | 19 |
+
+Fraction dev queries có **all gold documents** trong candidate prefix: top 5 = 0,742278; top 10 = 0,818533; top 20 = 0,888031; top 50 = 0,922780; top 100 = 0,943050; top 200 = 0,967181.
+
+Các bảng sau lưu tối đa 20 dev examples/family; không gán semantic cause label.
+
+#### Coverage-failure examples
+
+| sample_id | question | gold_document_ids | first_gold_rank | gold_ranks within top200 | gold_count |
+|---|---|---|---:|---|---:|
+| `12238` | Tạm hoãn thi ielts và nhiều chứng chỉ quốc tế? | `['180968']` | N/A | `[]` | 1 |
+| `128348` | Chỉ huy trưởng có được quản lý đồng thời nhiều công trình? | `['89392']` | N/A | `[]` | 1 |
+| `13426` | Máu gà dùng cho việc chẩn đoán bệnh viêm phế quản truyền nhiễm cần được bảo quản ở nhiệt độ bao nhiêu? | `['131890']` | N/A | `[]` | 1 |
+| `148506` | Bảo đảm thuốc, vật tư y tế và việc cán bộ y tế thôi việc, bỏ việc tại các cơ sở y tế công lập? | `['147934']` | N/A | `[]` | 1 |
+| `163810` | Hàm lượng chì cho phép trong sữa bột dành cho trẻ em dưới 12 tháng tuổi là bao nhiêu? | `['97249']` | N/A | `[]` | 1 |
+| `34008` | Chủ tịch Ủy ban nhân dân cấp xã có thẩm quyền xử phạt học sinh gian lận mang tài liệu vào phòng thi trong kỳ thi trung học phổ thông quốc gia không? | `['278875']` | N/A | `[]` | 1 |
+| `49224` | Mức phạt tiền đối với hai hành vi điều khiển xe máy chạy quá tốc độ và chuyển làn đường không đúng nơi quy định xử lý như thế nào? | `['17545']` | N/A | `[]` | 1 |
+| `55540` | Hồ sơ chứng thực hợp đồng chuyển nhượng quyền sử dụng đất bao gồm những gì? | `['259656']` | N/A | `[]` | 1 |
+| `60842` | Quy định về mức phụ cấp cho nhân viên hiện nay ra sao? | `['129823']` | N/A | `[]` | 1 |
+| `68908` | Chất cải tạo môi trường có cần được công bố hợp quy hay không? | `['185325']` | N/A | `[]` | 1 |
+| `75400` | Có những mức đánh giá xếp loại viên chức nào? | `['74494']` | N/A | `[]` | 1 |
+| `76684` | Có được phép ký nhiều lần hợp đồng lao động xác định thời hạn với cùng một người lao động không? | `['129823']` | N/A | `[]` | 1 |
+| `81064` | Công ty cho thuê lại tòa nhà có được xem là hành vi vi phạm pháp luật hay không? | `['223375']` | N/A | `[]` | 1 |
+| `84502` | Việc nhận diện giới khác với giới tính sinh học hoàn thiện đang có được đề xuất thế nào? | `['270765']` | N/A | `[]` | 1 |
+| `85530` | Hồ sơ xin cấp giấy phép xây dựng đối với công trình và nhà ở đô thị ở tỉnh Hà Giang bao gồm những gì? | `['67691']` | N/A | `[]` | 1 |
+| `85654` | Thể thức của một văn bản do cơ quan nhà nước ban hành phải đáp ứng những tiêu chí nào? | `['261464', '224257']` | N/A | `[]` | 2 |
+| `86710` | Có được ký hợp đồng lao động với các vị trí như sau: phục vụ hội họp, dọn dẹp vệ sinh (lao động phổ thông) và làm một công việc của Văn phòng UBND, HĐND ( lao động đã qua đào tạo Đại học) hay không? | `['75885']` | N/A | `[]` | 1 |
+| `96716` | Kinh phí thực hiện đề án tuyên truyền nhằm hoàn thành các chỉ tiêu phát triển đối tượng tham gia BHXH như thế nào? | `['25075']` | N/A | `[]` | 1 |
+| `99796` | Chủ tịch Ủy ban nhân dân tỉnh có thẩm quyền ra quyết định điều động công chức trong phạm vi mình quản lý không? | `['58662']` | N/A | `[]` | 1 |
+
+#### Ranking-failure examples
+
+| sample_id | question | gold_document_ids | first_gold_rank | gold_ranks within top200 | gold_count |
+|---|---|---|---:|---|---:|
+| `100152` | Trình tự lập báo cáo tình hình tài chính nhà nước được thực hiện như thế nào? | `['42598']` | 27 | `[27]` | 1 |
+| `100436` | Khi nào áp dụng quy định mới tại Nghị định 33/2023/NĐ-CP? | `['145175']` | 188 | `[188]` | 1 |
+| `100522` | Nhân viên chuyên môn kỹ thuật rà phá bom mìn phải đáp ứng đầy đủ các yêu cầu gì? | `['116851', '283045']` | 7 | `[7]` | 2 |
+| `100590` | Đề án tuyển sinh của các trường dự bị đại học được quy định như thế nào? | `['206812']` | 9 | `[9]` | 1 |
+| `100698` | Tàng trữ hóa chất chưa được phép sử dụng ở Việt Nam thì có bị xử lý hình sự hay không? | `['245154']` | 15 | `[15]` | 1 |
+| `101642` | Có hình thức đào tạo nào cho người đi làm tham gia học tập tại trường đại học không? | `['146481']` | 38 | `[38]` | 1 |
+| `101762` | Các ngày nghỉ thuộc về diện nghỉ lễ, tết được quy định như thế nào? | `['129823']` | 6 | `[6]` | 1 |
+| `102220` | Cha mẹ có hành vi bạo hành con trai của mình được hiểu như thế nào? | `['96450', '121603']` | 9 | `[9]` | 2 |
+| `10264` | Hồ sơ xin cấp giấy phép lưu hành xe được pháp luật quy định như thế nào? | `['192790']` | 14 | `[14]` | 1 |
+| `102902` | Làm và sử dụng Sổ đăng kiểm xe ô tô giả thì tổng hợp hình phạt ra sao? | `['245154']` | 109 | `[109]` | 1 |
+| `103692` | Xét nâng ngạch Giảng viên chính cần chứng chỉ gì? | `['16157']` | 49 | `[49]` | 1 |
+| `104238` | Uống rượu bia gây tai nạn giao thông chết người bồi thường cho người bị tai nạn như thế nào? | `['81598']` | 119 | `[119]` | 1 |
+| `105976` | Hạn mức công nhận đất ở đối với trường hợp thửa đất có vườn, ao được ở tỉnh Hòa Bình được quy định ra sao? | `['235996']` | 17 | `[17]` | 1 |
+| `107964` | Đăng ký kết hôn cần những giấy tờ gì mới nhất năm 2023? | `['157168']` | 9 | `[9]` | 1 |
+| `108182` | Xử phạt đối với hành vi không thông báo lưu trú cho khách? | `['98892']` | 7 | `[7]` | 1 |
+| `108738` | Người dân có bắt buộc phải đóng góp tiền để làm đường liên ấp không? | `['11864']` | 168 | `[168]` | 1 |
+| `108936` | Bộ luật Hình sự mới nhất 2023 là Bộ luật nào? | `['245154']` | 6 | `[6]` | 1 |
+| `110510` | Việc đánh giá từng tiêu chí an toàn thực phẩm đối với cơ sở kinh doanh muối được hướng dẫn ra sao? | `['92057']` | 10 | `[10]` | 1 |
+| `111188` | Mức phí cho việc thực hiện thủ tục thay đổi họ là bao nhiêu? | `['102478']` | 114 | `[114]` | 1 |
+| `111990` | Thời hiệu xử phạt vi phạm hành chính đối với cơ sở tiêm chủng khám sàng lọc không đầy đủ cho đối tượng được tiêm chủng là bao lâu? | `['17545']` | 155 | `[155]` | 1 |
+
+### Interpretation
+
+So với full-train diagnostic B00, dev/holdout giữ cùng pattern. Candidate Recall@100/200 lần lượt là 0,9534/0,9747 trên dev và 0,9522/0,9700 trên holdout, gần full-train 0,9592/0,9739. Official-style top-5 recall là 0,7615 trên dev và 0,7443 trên holdout, so với full-train 0,7616. Holdout thấp hơn nhẹ ở top-5/MRR nhưng không thay đổi qualitative conclusion.
+
+Khoảng cách Recall@200 với top-5 recall vẫn lớn: khoảng 21,32 percentage points trên dev và 22,57 points trên holdout. Trên dev, 207 ranking failures lớn hơn nhiều 19 coverage failures. Đây là evidence aggregate rằng ranking/final selection là bottleneck chính của B00 trên split v1; diagnostics chưa xác định lexical mismatch, annotation error hay corpus-representation error.
+
+### Decision
+
+Giữ B00 làm unchanged reference và freeze split v1. Pattern `high Recall@100/200` nhưng `significantly lower top-5 recall` được lặp lại, nên major axis tiếp theo là **document ranking / chunk→document aggregation**, chỉ tune/chọn method bằng dev. Holdout không được dùng để thay đổi method. Task này không implement B01.

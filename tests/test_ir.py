@@ -1,9 +1,33 @@
 import unittest
 
-from src.ir import build_bm25, evaluate_retrieval, retrieve_bm25
+from src.ir import (
+    build_bm25,
+    evaluate_retrieval,
+    make_legalir_split,
+    retrieve_bm25,
+)
 
 
 class BM25SanityTests(unittest.TestCase):
+    def test_split_groups_exact_questions_and_assigns_every_id_once(self) -> None:
+        samples = {
+            "a": {"question": "same"},
+            "b": {"question": "same"},
+            "c": {"question": "different"},
+            "d": {"question": None},
+        }
+
+        split_ids = make_legalir_split(samples)
+        assignment = {
+            sample_id: split_name
+            for split_name, ids in split_ids.items()
+            for sample_id in ids
+        }
+
+        self.assertEqual(assignment["a"], assignment["b"])
+        self.assertEqual(set(assignment), set(samples))
+        self.assertEqual(sum(map(len, split_ids.values())), len(samples))
+
     def test_retrieval_is_ranked_and_deduplicates_documents(self) -> None:
         chunks = [
             {"chunk_id": "a:0", "document_id": "a", "text": "thuế thuế đất"},
