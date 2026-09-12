@@ -9,22 +9,23 @@ Mỗi phase chỉ GO khi artifact/metric cần thiết đủ tin cậy. Threshol
 ```text
 P00 scorer/protocol verification
           ↓
-D00 raw data audit
+D00 raw/question/cross-task/split audit
           ↓
 D01/D02 normalization + structure validation
           ↓
-C0 canonical corpus baseline + D06 integrity gate
+D06a canonical corpus integrity
           ↓
-          ├────────────── LegalIR B0 → B1 → B2
-          │                            ↓
-          │                           QA1
-          │                            ↓
-          │                       QA2 → QA3 → QA4
-          │
-          └── QA0 controls when their own dependencies are available
+C0 → build B0 index → D06b → B0 → B1 → B2
+                                         ↓
+                                        QA1
+                                         ↓
+                                    QA2 → QA3 → QA4
+
+G0 ───────────────────────────────┬→ QA0 closed-book
+                                  └→ QA0 oracle ← verified + allowed mapping
 ```
 
-QA0 closed-book không cần LegalIR corpus và có thể chạy khi QA scorer/data/generator control sẵn sàng. QA0 gold-evidence oracle có thể chạy sớm chỉ khi reliable gold-evidence mapping tồn tại và được verify. End-to-end retrieved-evidence QA cần canonical evidence records và một retrieval/evidence pipeline measurable.
+G0 có thể được chuẩn bị độc lập với mature LegalIR. QA0 closed-book không cần LegalIR corpus và có thể chạy khi QA scorer/data/G0 sẵn sàng. QA0 gold-document, gold-passage hoặc gold-span oracle có thể chạy sớm chỉ khi đúng mapping granularity đã được verify và competition rules cho phép; gold-document oracle không phải gold-span oracle. End-to-end retrieved-evidence QA cần canonical evidence records và một retrieval/evidence pipeline measurable.
 
 ## Phase 0 — protocol/scorer verification
 
@@ -39,7 +40,9 @@ P00 không hoàn thành D00: scoring truth và raw-data truth là hai authority 
 
 ## Phase 1 — raw data + corpus contract
 
-Chạy D00 raw schema/split audit và thiết lập immutable input manifests/fingerprints. Audit missing/duplicate IDs, empty/null values, gold-document distribution/maximum-5 ceiling, leakage signals, label completeness, metadata availability và LegalQA gold-evidence mapping.
+Chạy D00 raw schema/question/cross-task audit và thiết lập immutable input manifests/fingerprints. Audit `raw_question → canonical_question → retrieval_query/generator_question`, missing/duplicate IDs, empty/null values, gold-document distribution/maximum-5 ceiling, label completeness và metadata. Cross-task report tách observed ID/question overlap, mapping cardinality, gold-document resolution, reliable QA evidence granularity và allowed label use.
+
+Freeze canonical local validation manifest bằng deterministic duplicate-group-aware generation: explicit sample/group IDs, fixed seed khi có randomness, data/manifest fingerprint, label-distribution report và cross-task grouping khi có information flow. Không silently regenerate; public leaderboard không phải local validation set.
 
 - **GO:** mỗi raw record/split được manifest; exceptions và unknowns explicit; không silent loss/ID remap.
 - **NO-GO:** schema/source ambiguity chưa resolve, leakage nghiêm trọng chưa có policy hoặc gold ID không map được khi task yêu cầu.
@@ -48,19 +51,19 @@ Không commit/copy raw competition data; chỉ lưu config, manifests/fingerprin
 
 ## Phase 2 — canonical corpus baseline / preprocessing validation
 
-Chạy D01 minimal normalization, D02 legal-structure parsing QC và D06 provenance/corpus-index integrity để freeze C0. C0 dùng policy đơn giản, deterministic, auditable; không cần chứng minh là chunk strategy tốt nhất.
+Chạy D01 minimal normalization, D02 legal-structure parsing QC và D06a canonical corpus integrity để freeze C0. C0 dùng policy đơn giản, deterministic, auditable; không cần chứng minh là chunk strategy tốt nhất và không cần index tồn tại.
 
-- **GO:** source-preserving representation, explicit `source_text`/`retrieval_text`, complete chunk→document→source provenance, deterministic regeneration và manifest/index consistency.
-- **NO-GO:** silent parse skip/document loss; orphan/duplicate không giải thích; source-span mismatch; corpus/index fingerprint lệch.
+- **GO:** source-preserving representation, explicit `source_text`/`retrieval_text`, complete chunk→document→source provenance, deterministic regeneration và D06a corpus/manifest consistency.
+- **NO-GO:** silent parse skip/document loss; orphan/duplicate không giải thích; source-span mismatch hoặc corpus fingerprint không tái lập.
 
 Parser/chunker/validator hiện tại chỉ `Code present`; code existence không mở gate C0.
 
 ## Phase 3 — LegalIR B0/B1/B2
 
-Chạy E00–E04 trên cùng C0 fingerprint: BM25, BGE-M3 control, weighted fusion, RRF, cross-encoder. Log candidate Recall@K curve, zero/full-recall rates, official `recall`/`precision`, overlap/unique gold, chunk→document behavior và compute.
+Build B0 index từ C0, chạy D06b để kiểm tra `index count ↔ manifest count ↔ IDs ↔ corpus/index fingerprints` và encoder/index compatibility, rồi mới benchmark E00. Sau đó chạy E01–E04 trên cùng C0 fingerprint: BGE-M3 control, weighted fusion, RRF, cross-encoder. Mỗi retriever index phải qua D06b. Log candidate Recall@K curve, zero/full-recall rates, official `recall`/`precision`, overlap/unique gold, chunk→document behavior và compute.
 
 - **GO:** run tái lập được và bottleneck được xác định.
-- **NO-GO:** score không ổn định/không giải thích được, encoding/index mismatch hoặc document deduplication sai.
+- **NO-GO:** D06b fail, score không ổn định/không giải thích được, encoding/index mismatch hoặc document deduplication sai.
 - Candidate coverage cao nhưng final official recall thấp: ưu tiên aggregation/reranking/subset selection.
 - Candidate coverage thấp và final gần candidate ceiling: ưu tiên retrieval/representation.
 
@@ -70,7 +73,7 @@ Chạy E00–E04 trên cùng C0 fingerprint: BM25, BGE-M3 control, weighted fusi
 
 Chạy D03–D05 rồi E05–E06 với fixed downstream stack: retrieval-unit strategy, size/overlap, title/hierarchy enrichment và document aggregation. Tách chunk boundary, enrichment, candidate construction, aggregation và reranking.
 
-- **GO:** gain lặp lại trên held-out/aggregate và target error category, không do duplicate/title leakage; corpus variant qua D06.
+- **GO:** gain lặp lại trên held-out/aggregate và target error category, không do duplicate/title leakage; mỗi corpus variant qua `D06a → build index → D06b → benchmark`.
 - **NO-GO:** chỉ tăng chunk score nhưng không tăng document outcome, hoặc representation gây source loss/truncation/regression.
 
 ## Phase 5 — reranker/hard negatives
@@ -114,21 +117,23 @@ Các hướng này không thay B2 reference system. E14 final subset calibration
 
 ### QA0 — early controls
 
-Chạy closed-book khi scorer/data/generator fixed. Chạy gold-evidence oracle khi mapping đã verified.
+Freeze G0 (model/revision, tokenizer nếu có, prompts, decoding, context budget, evidence serialization, parser, retry, seed và API/runtime metadata), rồi chạy fixed-fixture sanity/reproducibility checks. Chạy `G0 + no evidence` closed-book khi scorer/data/G0 sẵn sàng. Chỉ chạy `G0 + gold document/passage/span` oracle khi mapping granularity và competition-rule permission đã verified.
 
 - **GO:** control reproducible và error attribution có ý nghĩa.
-- **NO-GO:** mapping gold mơ hồ, prompt/parser không fixed hoặc scorer reproduction sai.
+- **NO-GO:** G0 sanity/reproducibility fail, mapping gold mơ hồ, cross-task use chưa được phép, prompt/parser không fixed hoặc scorer reproduction sai.
 
 ### QA1 — after LegalIR B2 benchmark on validated corpus
 
 So retrieve–rerank–generate với no-rerank RAG trên cùng canonical evidence records, generator/context policy và source-preserving evidence adapter.
 
 - **GO:** selected evidence/official metric thay đổi đúng hypothesis.
-- **NO-GO:** B2 chưa measurable, C0/D06 chưa đạt, comparison thay nhiều axis hoặc evidence trace thiếu.
+- **NO-GO:** B2 chưa measurable, C0/D06a hoặc index/D06b chưa đạt, G0 không fixed, comparison thay nhiều axis hoặc evidence trace thiếu.
 
 ### QA2 → QA3 → QA4
 
 QA2 ablate span selection; QA3 ablate verifier; QA4 chỉ thay answer realization sau factual support. Mỗi bước giữ fixed component theo [experiment map](05_experiment_map.md).
+
+QA1–QA4 giữ G0 hoặc declared successor cố định. Không đổi retriever và generator trong cùng comparison trừ khi experiment khai báo generator là independent variable.
 
 - **GO:** addition cải thiện target diagnostic hoặc official metric mà không che regression quan trọng.
 - **NO-GO:** metric gain đi kèm unsupported claims/dropped legal conditions, hoặc verifier/selector chưa được audit.
@@ -148,3 +153,7 @@ oracle QA low                              → generator / reasoning / realizati
 ## Dừng và quay lại
 
 Dừng một family sau ít nhất một implementation đúng và một validation có attribution nếu nó không tạo unique evidence, gain không lặp lại, cost vượt budget hoặc error analysis cho thấy giải sai bottleneck. Ghi null/failed run vào [05 — Experiment map](05_experiment_map.md); không biến null result thành claim method vô dụng trên mọi setting.
+
+## Research contract freeze
+
+Sau khi sáu gap này được đóng, architecture documentation được xem là đủ để bắt đầu `P00 executable checks → D00 audit tooling → D01/D02 preprocessing → D06a → C0 → B0`. Không tiếp tục mở rộng method taxonomy chỉ vì còn phương pháp khác. Documentation tiếp theo chủ yếu được kích hoạt bởi data facts mới, experiment artifacts/results, implementation constraints, competition-rule changes hoặc validated research decisions.

@@ -23,13 +23,15 @@ Trạng thái dùng trong tài liệu:
 
 ```text
 raw data → D00 audit → D01 minimal normalization → D02 parser QC
-         → deterministic retrieval units + provenance → D06 integrity gate
+         → deterministic retrieval units + provenance → D06a corpus integrity
          → C0 fixed corpus manifest
+         → build retriever/index → D06b index↔corpus alignment
+         → B0/B1/B2 benchmark
 ```
 
-`C0` là configuration preprocessing/corpus cố định để các LegalIR experiments so sánh được; **không phải machine-learning model** và không tuyên bố chunking strategy tối ưu. C0 tối thiểu phải có canonical document manifest, chunk/evidence manifest, `source_text`/`retrieval_text` distinction, chunk→document→source provenance, preprocessing config, input/corpus fingerprints và validation report. Contract chi tiết ở [00 — Data contract và preprocessing](00_data_contract_and_preprocessing.md).
+`C0` là configuration preprocessing/corpus cố định để các LegalIR experiments so sánh được; **không phải machine-learning model** và không tuyên bố chunking strategy tối ưu. C0 tối thiểu phải có canonical document manifest, chunk/evidence manifest, `source_text`/`retrieval_text` distinction, chunk→document→source provenance, preprocessing config, input/corpus fingerprints và D06a validation report. Index chưa cần tồn tại để freeze C0. Contract chi tiết ở [00 — Data contract và preprocessing](00_data_contract_and_preprocessing.md).
 
-Baseline C0 đầu tiên phải đơn giản, deterministic và auditable. Parser/chunker/validator trong `src/` là `Code present`; C0 vẫn `Planned` cho đến khi D00/D01/D02 và D06 cung cấp artifact đạt gate.
+Baseline C0 đầu tiên phải đơn giản, deterministic và auditable. Parser/chunker/validator trong `src/` là `Code present`; C0 vẫn `Planned` cho đến khi D00/D01/D02 và D06a cung cấp artifact đạt gate. Sau đó, mỗi index build cho C0 hoặc corpus variant phải qua D06b trước retriever benchmark.
 
 Quy tắc attribution:
 
@@ -52,13 +54,15 @@ Thứ tự reranking và aggregation là một independent variable: có thể r
 ```text
 C0 fixed corpus
       ↓
-query → BM25 chunk/document retrieval
+build BM25 index → D06b
+      ↓
+canonical_question → retrieval_query → BM25 chunk/document retrieval
       → candidate document construction
       → document aggregation
       → final subset (1–5 document IDs)
 ```
 
-Mục đích: tạo classical baseline dễ debug cho exact term, số hiệu văn bản, Điều/Khoản/Điểm và tên luật. B0 dùng một C0 fingerprint cố định. Query tokenization/BM25 parameters và aggregation có thể được ablate có kiểm soát; normalization, retrieval-unit boundary hoặc enrichment chỉ đổi trong experiment Data & Corpus riêng với downstream B0 fixed.
+Mục đích: tạo classical baseline dễ debug cho exact term, số hiệu văn bản, Điều/Khoản/Điểm và tên luật. B0 dùng một C0 fingerprint và D06b alignment report cố định. `raw_question` không bị sửa; B0 nhận một versioned `retrieval_query` dẫn xuất từ `canonical_question`. Query tokenization/BM25 parameters và aggregation có thể được ablate có kiểm soát; normalization, retrieval-unit boundary hoặc enrichment chỉ đổi trong experiment Data & Corpus riêng với downstream B0 fixed.
 
 **Trạng thái:** `Planned`. Repository có thể chứa prototype liên quan, nhưng sự hiện diện của code không biến B0 thành `Validated` hay `Benchmarked`.
 
@@ -66,7 +70,7 @@ Mục đích: tạo classical baseline dễ debug cho exact term, số hiệu v�
 
 ```text
                  ┌─ BM25 top-N ───┐
-query ───────────┤                 ├→ union/fusion
+retrieval_query ─┤                 ├→ union/fusion
                  └─ dense top-N ──┘
                                       ↓
                          candidate document construction
@@ -85,7 +89,7 @@ Không mặc định RRF thắng weighted fusion. Candidate depth, fusion, const
 
 ```text
                          ┌── BM25 top-N ─────┐
-query ──────────────────┤                   ├→ candidate union/fusion
+retrieval_query ────────┤                   ├→ candidate union/fusion
                          └── dense top-N ────┘
                                                    ↓
                                       cross-encoder reranking
@@ -155,4 +159,4 @@ Không có artifact trong repository chứng minh recall là primary metric hay 
 
 ## Reproducibility contract
 
-Mỗi baseline run phải log: commit; input data/split fingerprint; preprocessing config/version; canonical corpus fingerprint; document/chunk manifests; chunk→document mapping; index fingerprint và item-count/ID consistency; model revision; tokenizer/max sequence length; candidate depths; score normalization; fusion; construction/deduplication; aggregation; reranker scope/depth; final-k rule; seed; hardware; runtime; index size; scorer artifact/hash.
+Mỗi baseline run phải log: commit; input data fingerprint; immutable split manifest/fingerprint; `canonical_question`/`retrieval_query` transform config và variant; preprocessing config/version; canonical corpus fingerprint; D06a report; document/chunk manifests; chunk→document mapping; index fingerprint, encoder/index config và D06b item-count/ID consistency; model revision; tokenizer/max sequence length; candidate depths; score normalization; fusion; construction/deduplication; aggregation; reranker scope/depth; final-k rule; seed; hardware; runtime; index size; scorer artifact/hash.

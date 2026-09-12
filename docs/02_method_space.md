@@ -11,6 +11,7 @@ Các dimensions dưới đây là controllable research axes. Baseline candidate
 | Dimension | Baseline candidate | Research candidate | Speculative / conditional | Dependency và rủi ro chính |
 |---|---|---|---|---|
 | Normalization | NFC/line ending/controlled whitespace, source-preserving | Rule-specific artifact removal đã audit | Learned rewriting/correction | Không xóa numbering, dấu, punctuation hoặc legal wording. |
+| Query representation | `raw_question` bất biến; `canonical_question` source-preserving; `retrieval_query` mặc định từ canonical | Versioned citation normalization/rewrite/multi-query/PRF branch, luôn giữ provenance về canonical | Generator-side rewriting | Retrieval transform không overwrite câu hỏi gốc; `generator_question` được kiểm soát độc lập. |
 | Legal structure parsing | Conservative headings/boundaries + fallback | Multiple parser rules theo document fingerprint | Learned structure parser | Boundary phải có span/provenance diagnostics; code hiện tại chỉ `Code present`. |
 | Retrieval unit | Một policy deterministic, auditable | Article/clause/point khi meaningful; structure-aware bounded chunks | Learned segmentation | Không có một level phù hợp mọi document. |
 | Chunk size/overlap | Fixed config được log | Token-bounded/sliding-window ablation | Query-adaptive chunking | Đo coverage, duplication, truncation; giữ structural policy fixed khi đổi size. |
@@ -72,6 +73,8 @@ strong expensive teacher → soft relevance scores/margins → cheaper student
 Hard-negative mining quyết định **example nào** đưa vào train; distillation quyết định **target signal nào** student bắt chước. Có thể kết hợp nhưng phải ablate riêng. Teacher-generated hard negatives không tự động đồng nghĩa với soft-label distillation.
 
 ## Method map — LegalQA
+
+`G0` là fixed generator control, không phải model-family sweep: model/revision, prompt, decoding, context/evidence serialization và parser/retry/runtime được freeze để QA0–QA4 có causal attribution. Đổi generator về sau là một research axis riêng.
 
 | Family | Mechanism | Failure mode giải quyết | Strength | Weakness / risk | Complementarity | Cost | Priority | Repo status |
 |---|---|---|---|---|---|---:|---|---|

@@ -77,6 +77,24 @@ Các diagnostics này là local research diagnostics theo [00 — Data contract 
 - exact/near-duplicate question analysis; duplicated answer/reference entries;
 - document/passage overlap chỉ được diễn giải là leakage sau khi xét split semantics và legal-text repetition.
 
+**Query integrity**
+
+- sample/question ID mapping và khả năng trace `raw_question → canonical_question → retrieval_query/generator_question`;
+- null/empty questions; Unicode/whitespace diff và token/length statistics;
+- exact duplicate groups và reliable near-duplicate groups;
+- canonical-versus-retrieval-query diff, transformation/config/version và số variants mỗi sample;
+- rewrite drift, tỷ lệ ungrounded added tokens khi áp dụng được, và bảo toàn số hiệu văn bản, Điều/Khoản/Điểm cùng identifiers khác;
+- `generator_question` không silently nhận retrieval rewrite như câu hỏi gốc.
+
+**Split integrity**
+
+- immutable split manifest chứa explicit sample IDs/group IDs, generation config, fixed seed khi có randomness, data fingerprint và manifest fingerprint;
+- zero exact-duplicate group leakage; near-duplicate group leakage được đo khi grouping đủ tin cậy;
+- cross-task exact/canonical question-pair leakage khi pipeline có cross-task information flow;
+- label-distribution report theo task và mọi trade-off do giữ group boundary;
+- fingerprint consistency giữa split dùng train/tune/evaluate và run artifact; không silently regenerate;
+- public leaderboard được report riêng, không được gọi là local validation hoặc thay local held-out evaluation.
+
 **Parsing**
 
 - parse success/failure rate và failure reasons; số record bị fallback hoặc skipped;
@@ -94,13 +112,21 @@ Các diagnostics này là local research diagnostics theo [00 — Data contract 
 - số parent structural units bị một chunk cắt qua hoặc chứa đồng thời;
 - intentional overlap/multi-granularity phải có flag để không bị nhầm với duplicate.
 
-**Provenance và integrity**
+**D06a — canonical corpus integrity**
 
 - valid `chunk_id → document_id → source document` mapping rate và orphan rate;
 - missing/unreliable source-span rate; exact `source_text == canonical_source[start:end]` khi offset được khai báo;
 - deterministic regeneration trên identical input/config;
-- input, preprocessing config, corpus/manifest và index fingerprint consistency;
-- `index item count ↔ chunk manifest count ↔ chunk IDs ↔ corpus fingerprint`.
+- unique document/chunk IDs; no unexplained duplicates; source coverage; no silent loss/skip/truncation;
+- input, preprocessing config, corpus/manifest fingerprint consistency.
+
+**D06b — index ↔ corpus alignment**
+
+- `index item count ↔ manifest item count ↔ chunk/document IDs ↔ corpus fingerprint ↔ index fingerprint`;
+- missing/extra IDs và ordering mismatch khi backend phụ thuộc ordering;
+- stale index hoặc index build từ corpus khác;
+- encoder/tokenizer/index configuration compatibility và load-time fingerprint check;
+- identical-query smoke test/ranking checksum chỉ dùng để phát hiện alignment regression, không phải benchmark result.
 
 **Retrieval representation**
 
@@ -109,7 +135,7 @@ Các diagnostics này là local research diagnostics theo [00 — Data contract 
 - truncation mới phát sinh do enrichment theo từng tokenizer;
 - kiểm tra derived prefix không overwrite hoặc bị trình bày như original legal text.
 
-Corpus không được gọi `Validated` nếu có silent document loss, silent parse-error skipping, orphan chunk, unexplained duplicate, không tái tạo được mapping hoặc index không khớp manifest. Parser/chunker/validator code hiện có chỉ là `Code present` cho đến khi validation artifacts chứng minh các checks tương ứng.
+Corpus không được gọi `Validated` nếu D06a còn silent document loss, silent parse-error skipping, orphan chunk, unexplained duplicate hoặc mapping không tái tạo được. C0 có thể freeze sau D06a mà chưa có index; index không khớp manifest làm D06b fail và chặn retriever benchmark, không phủ định source corpus chỉ vì index chưa được tạo. Parser/chunker/validator code hiện có chỉ là `Code present` cho đến khi validation artifacts chứng minh các checks tương ứng.
 
 ### Candidate document recall
 
@@ -165,13 +191,13 @@ maximum attainable official recall(q) = min(5, |G_q|) / |G_q|
 
 Tách khỏi official `rouge`/`meteor`:
 
-- evidence coverage và selected-evidence precision/recall, chỉ khi gold mapping đáng tin;
+- evidence coverage và selected-evidence precision/recall, chỉ ở granularity mà gold mapping đáng tin;
 - claim-support/factuality rate;
 - citation validity và provenance completeness trong internal record;
 - unsupported/abstention rate;
 - answer length và error split retrieval miss / evidence-selection / generation-grounding / formatting.
 
-Oracle metrics chỉ hợp lệ nếu gold-evidence mapping được kiểm tra. Citation quality nội bộ không được đánh đồng với official score và citation không tự động được append vào submitted answer.
+Oracle metrics chỉ hợp lệ nếu mapping được kiểm tra và đặt tên đúng granularity: gold-document, gold-passage hoặc gold-span oracle. LegalIR document-level relevance labels không tự động là gold QA evidence passages/spans. Citation quality nội bộ không được đánh đồng với official score và citation không tự động được append vào submitted answer.
 
 ## Chẩn đoán bottleneck
 
@@ -179,7 +205,7 @@ Oracle metrics chỉ hợp lệ nếu gold-evidence mapping được kiểm tra.
 candidate recall cao + final official recall thấp → aggregation/reranking/subset selection
 candidate recall thấp + final gần candidate ceiling → retrieval/representation/query coverage
 oracle QA cao + retrieved-evidence QA thấp → retrieval/evidence selection
-oracle QA thấp → generator/reasoning/answer realization hoặc gold mapping
+oracle QA thấp → generator/reasoning/answer realization hoặc oracle mapping/granularity
 ```
 
 “Cao/thấp” phải là threshold working hypothesis được đăng ký trước, không phải kết luận sau khi nhìn test score.
@@ -205,7 +231,8 @@ oracle QA thấp → generator/reasoning/answer realization hoặc gold mapping
 
 - Một major axis mỗi experiment; component khác fixed.
 - Cùng candidate pool khi so reranker; cùng downstream stack khi so retriever.
-- Validation độc lập với public leaderboard; lưu split fingerprint.
+- Validation độc lập với public leaderboard; dùng immutable duplicate-group-aware split manifest/fingerprint và kiểm tra cross-task pair leakage khi relevant.
+- QA0–QA4 giữ G0 hoặc declared successor cố định trừ khi generator là independent variable; không đổi retriever và generator trong cùng comparison.
 - Báo confidence interval/paired bootstrap khi sample cho phép.
 - Ghi failed/null runs, package/model revisions, scorer hash và mọi deviation.
 - Không gọi `Code present` là `Validated`, hoặc gọi một run là `Benchmarked` nếu thiếu artifact tái lập.

@@ -4,7 +4,7 @@
 
 Project có ba research axes phụ thuộc nhau:
 
-- **Axis A — Data & Corpus Representation**: kiểm tra raw data, bảo toàn source, parse cấu trúc pháp luật, tạo retrieval/evidence units và provenance.
+- **Axis A — Data & Corpus Representation**: kiểm tra raw data, quản lý `raw_question → canonical_question → retrieval_query/generator_question`, bảo toàn source, parse cấu trúc pháp luật, tạo retrieval/evidence units, provenance và reproducible local split.
 - **Axis B — LegalIR** (Legal Information Retrieval — truy hồi thông tin pháp luật): nhận câu hỏi pháp lý và chọn các ID văn bản liên quan.
 - **Axis C — LegalQA** (Legal Question Answering — hỏi đáp pháp luật): dùng câu hỏi và evidence để tạo câu trả lời.
 
@@ -28,12 +28,13 @@ Ngược lại, nếu evidence đã có nhưng LegalQA vẫn sai, lỗi có th�
 
 ### Axis A — Data & Corpus Representation
 
-1. Bảo toàn legal meaning và document identity từ raw source.
+1. Bảo toàn legal meaning của question representations và document identity từ raw source.
 2. Validate structural parsing bằng diagnostics và manual inspection, không suy từ việc parser code tồn tại.
 3. Tạo retrieval/evidence units đơn giản, deterministic và auditable.
 4. Bảo toàn provenance `chunk → document_id → source document`, và source span khi đáng tin.
 5. Đo chunking/representation choices thay vì coi chúng là fixed preprocessing mặc định.
 6. Freeze canonical corpus baseline `C0` trước khi so sánh major LegalIR methods.
+7. Freeze deterministic, duplicate-group-aware local validation manifest; public leaderboard không thay thế local held-out evaluation.
 
 ### Axis B — LegalIR
 
@@ -46,9 +47,10 @@ Ngược lại, nếu evidence đã có nhưng LegalQA vẫn sai, lỗi có th�
 ### Axis C — LegalQA
 
 1. Tiêu thụ canonical evidence records theo data contract và tái sử dụng tầng evidence retrieval đã được đo của LegalIR.
-2. Dùng oracle control khi và chỉ khi có mapping gold evidence đáng tin cậy.
-3. Tách retrieval error, evidence-selection error và generation/grounding error.
-4. Đặt factual grounding trước tối ưu hóa hình thức theo metric.
+2. Dùng `G0` — fixed generator control — để tách tác động của evidence/retrieval khỏi thay đổi generator.
+3. Dùng oracle control khi và chỉ khi mapping và granularity gold document/passage/span đã được audit; không gọi document-level labels là gold QA spans.
+4. Tách retrieval error, evidence-selection error và generation/grounding error.
+5. Đặt factual grounding trước tối ưu hóa hình thức theo metric.
 
 ## Hành vi chính thức đã xác định từ `scoring/`
 
@@ -91,6 +93,8 @@ Các JSON task hiện có trong local `data/LegalIR/` và `data/LegalQA/` đều
 
 Local corpus archive quan sát được chứa document JSON với `id`, `passage`, `link` và optional `name`. Đây là quan sát read-only trên dữ liệu bị Git ignore ở máy hiện tại, không phải tuyên bố các file đó được version-control hoặc schema này đúng cho mọi split/phiên bản. Contract đầy đủ nằm tại [00 — Data contract và preprocessing](00_data_contract_and_preprocessing.md).
 
+Quan sát local hiện chỉ cho thấy partial exact-question overlap giữa hai task, trong khi sample-ID sets rời nhau và mapping theo text có cả one-to-many/many-to-one. Đây là data property cần D00 audit, không phải bằng chứng hai task được paired toàn bộ, không phải permission dùng cross-task labels, và không phải gold evidence-span mapping.
+
 ## Known / Unknown / Must Verify
 
 ### Known
@@ -98,6 +102,7 @@ Local corpus archive quan sát được chứa document JSON với `id`, `passag
 - Official scorer contract và tên output metric đã có trong `scoring/`.
 - Data & Corpus Representation là prerequisite của LegalIR và evidence-grounded LegalQA.
 - LegalIR và LegalQA có thể chia sẻ tầng retrieval nhưng có submission adapter khác nhau.
+- Canonical local validation split và question/corpus fingerprints là thành phần của reproducible research, không phải tùy chọn của từng run.
 - Code trong `src/` có parser/chunker và prototype dense chunk retrieval; đây là `Code present`, không phải `Validated` hay `Benchmarked`.
 - B2 trong tài liệu là reference design `Planned`, không phải hệ thống đã hoàn thành.
 
@@ -105,19 +110,21 @@ Local corpus archive quan sát được chứa document JSON với `id`, `passag
 
 - Quy mô và quan hệ chính xác của train/dev/public/private ngoài các file hiện có.
 - Phân bố số gold document ngoài local train snapshot và mức đầy đủ của relevance labels.
-- Mapping gold evidence cho LegalQA có tồn tại và đủ tin cậy cho oracle hay không.
+- Competition rules có cho phép dùng LegalIR labels trong LegalQA (hoặc ngược lại) hay không.
+- Mapping gold document, gold passage hoặc gold evidence span cho LegalQA có tồn tại và đủ tin cậy cho từng oracle variant hay không.
 - Độ dài document/chunk theo từng tokenizer, chất lượng metadata và thông tin phiên bản/hiệu lực.
 - Quy tắc external model/data/API; giới hạn latency, memory, hardware và submission rate.
 - NLTK/package version dùng trong môi trường chấm METEOR nếu không được pin ngoài artifact hiện có.
 
 ### Must verify trước benchmark chính thức
 
-- Raw-data, split và corpus manifests/fingerprints; kiểm tra leakage theo task semantics.
+- Raw-data, immutable local split và corpus manifests/fingerprints; duplicate-group/cross-task-pair leakage theo task semantics.
 - Canonical source integrity, parser boundary quality và deterministic chunk regeneration.
 - Gold-document distribution, label-completeness signals và ceiling do tối đa năm output.
 - Mapping chunk → document → source, deduplication và hành vi với ID sai/missing/extra.
 - Sự nhất quán giữa indexing/query encoding, gồm tokenizer và `max_seq_length`.
-- Gold-evidence mapping của LegalQA trước khi gọi một run là oracle.
+- Cross-task use permission và đúng granularity của gold-document/passage/span mapping trước khi gọi một QA run là oracle.
+- G0 generator configuration và sanity/reproducibility artifact trước khi gọi QA0 là `Benchmarked`.
 - Local scorer reproduction phải gọi hoặc tái sử dụng trung thực organizer scorer.
 
 ## Tiêu chí thành công của research baseline

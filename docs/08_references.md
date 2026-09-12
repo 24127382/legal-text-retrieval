@@ -26,7 +26,7 @@ Danh mục này tập hợp các nguồn hỗ trợ cho method space và researc
 ## PRF, distillation và pseudo-labeling
 
 16. Victor Lavrenko, W. Bruce Croft. “Relevance-Based Language Models.” SIGIR 2001, pp. 120–127. <https://doi.org/10.1145/383952.383972>
-17. Nasreen Abdul-Jaleel et al. “UMass at TREC 2004: Novelty and HARD.” TREC 2004. Nguồn thường được dùng cho RM3 interpolation. **TODO: verify citation và stable publisher URL trước khi dùng trong paper.**
+17. Nasreen Abdul-Jaleel, James Allan, W. Bruce Croft, Fernando Diaz, Leah Larkey, Xiaoyan Li, Mark D. Smucker, Courtney Wade. “UMass at TREC 2004: Novelty and HARD.” *Proceedings of the Thirteenth Text REtrieval Conference (TREC 2004)*, NIST Special Publication 500-261, 2004. <https://trec.nist.gov/pubs/trec13/papers/umass.novelty.hard.pdf>
 18. Sebastian Hofstätter, Sophia Althammer, Michael Schröder, Mete Sertkan, Allan Hanbury. “Improving Efficient Neural Ranking Models with Cross-Architecture Knowledge Distillation.” 2020. <https://arxiv.org/abs/2010.02666>
 19. Kexin Wang, Nandan Thakur, Nils Reimers, Iryna Gurevych. “GPL: Generative Pseudo Labeling for Unsupervised Domain Adaptation of Dense Retrieval.” NAACL 2022. <https://aclanthology.org/2022.naacl-main.168/>
 20. Chao-Wei Huang, Chen-An Li, Tsu-Yuan Hsu, Chen-Yu Hsu, Yun-Nung Chen. “Unsupervised Multilingual Dense Retrieval via Generative Pseudo Labeling.” Findings of EACL 2024. <https://aclanthology.org/2024.findings-eacl.49/>
@@ -68,4 +68,4 @@ Danh mục này tập hợp các nguồn hỗ trợ cho method space và researc
 
 - Không copy claim benchmark giữa datasets như một kỳ vọng trực tiếp cho UIT DSC 2026.
 - Ghi model/paper revision và access date trong experiment artifact khi một source có thể thay đổi.
-- Mục có `TODO: verify citation` không được dùng làm citation xuất bản cho đến khi metadata được xác minh.
+- Với proceedings citation, ưu tiên metadata và stable URL từ publisher/conference archive có thẩm quyền.

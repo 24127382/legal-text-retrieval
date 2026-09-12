@@ -44,17 +44,59 @@ Evidence bottleneck bắt đầu trước retriever. Thông tin bị xóa, làm 
 
 ## Snapshot dữ liệu quan sát local
 
-Quan sát read-only ngày 2026-09-10 trên máy hiện tại, không phải artifact được Git quản lý:
+Quan sát read-only ngày 2026-09-12 trên máy hiện tại, không phải artifact được Git quản lý:
 
 - LegalIR và LegalQA mỗi task có local train JSON 7.000 sample và public-official JSON 1.000 sample; mỗi file là object keyed theo sample ID với hai field `question`, `answer`.
 - LegalIR train dùng list document ID ở `answer`; LegalQA train dùng string; public-official của cả hai để `answer: null`.
-- Exact-duplicate question groups tồn tại trong mỗi local train file, và có exact question overlap giữa hai tasks; ý nghĩa leakage/paired-task của chúng chưa được kết luận.
+- Hai tập sample ID của LegalIR và LegalQA rời nhau ở cả train (0/7.000 ID chung) và public-official (0/1.000 ID chung); không được join hai task theo sample ID.
+- Trong train có 21 exact-shared question text, phủ 22/7.000 LegalIR record (0,314%) và 26/7.000 LegalQA record (0,371%). Cardinality theo question text là 16 nhóm `1:1`, ba nhóm `1:2`, một nhóm `1:3` và một nhóm `2:1`; vì vậy exact text overlap không tạo một mapping sample one-to-one tổng quát. Public-official có đúng một exact-shared question text (`1:1`), phủ 1/1.000 record (0,1%) của mỗi task.
+- Exact-duplicate question groups tồn tại trong train: LegalIR có 13 nhóm/26 record và LegalQA có 14 nhóm/29 record. Ý nghĩa leakage hoặc paired-task của các nhóm này chưa được kết luận chỉ từ text equality.
 - Trong local LegalIR train, gold-list length quan sát được từ 1 đến 5, không có list rỗng hoặc dài hơn 5. Đây không phải claim cho dev/private/unavailable splits.
-- Hai local `selected-contexts.zip` có cùng fingerprint tại thời điểm kiểm tra và chứa 8.532 JSON document. Field quan sát được là `id`, `link`, `passage`; `name` có ở một phần document.
+- Hai local `selected-contexts.zip` byte-identical theo SHA-256 tại thời điểm kiểm tra và chứa 8.532 JSON document. Field quan sát được là `id`, `link`, `passage`; `name` có ở một phần document. Toàn bộ 3.105 unique gold document ID trong LegalIR train resolve được về filename trong archive; riêng 22 LegalIR record có exact-shared question với LegalQA chứa 24 gold assignments/19 unique document ID và tất cả đều resolve được.
 - Snapshot có 20 record với `passage` rỗng. Đây là lý do phải báo lỗi/ngoại lệ minh bạch, không phải quyền tự động drop record.
 - Raw `passage` character length rất lệch (median 23.108, p95 135.624, max 5.983.358 ký tự); đây chỉ là character diagnostic, không thay token-length measurement theo model. Có exact-duplicate non-empty passages trong snapshot, nhưng text lặp không tự động là leakage.
 
-Các con số trên chưa thay thế D00: cần manifest, script/audit artifact tái lập được và fingerprint được lưu ngoài raw data. Private split, các bản dữ liệu khác, semantics của `link`, chất lượng `name`, document version/effective date và gold-evidence mapping vẫn chưa được xác minh.
+Các con số trên chưa thay thế D00: cần manifest, script/audit artifact tái lập được và fingerprint được lưu ngoài raw data. Private split, các bản dữ liệu khác, semantics của `link`, chất lượng `name`, document version/effective date và gold-document/passage/span mapping vẫn chưa được xác minh.
+
+## Question/query representation contract
+
+Pipeline khái niệm của mỗi task sample là:
+
+```text
+raw_question
+      ↓
+canonical_question
+      ├── retrieval_query
+      └── generator_question
+```
+
+| Representation | Contract |
+|---|---|
+| `raw_question` | Text câu hỏi do organizer cung cấp. Bất biến; không sửa hoặc overwrite in-place. |
+| `canonical_question` | Biểu diễn source-preserving sau **chỉ** minimal normalization đã validate, ví dụ Unicode hoặc whitespace policy có version. Phải giữ wording và legal meaning; không silently rewrite ở lớp này. |
+| `retrieval_query` | Biểu diễn dẫn xuất chỉ dùng cho retrieval. Có thể áp dụng tokenizer-specific preprocessing, citation normalization, legal query rewrite, multi-query expansion hoặc pseudo-relevance feedback (PRF — phản hồi liên quan giả) đã khai báo. Mỗi variant phải trỏ về `canonical_question`, có variant ID, transform/config/version và không thay thế câu hỏi gốc. |
+| `generator_question` | Biểu diễn đưa vào QA generator. Mặc định bằng hoặc source-preserving từ `canonical_question`; không tự động dùng retrieval rewrite như thể đó là câu hỏi gốc. Generator-side rewriting, nếu nghiên cứu, là một QA experiment explicit với provenance riêng. |
+
+Hard invariants:
+
+```text
+raw_question is never overwritten
+canonical_question preserves semantic intent
+retrieval_query is derived and versioned
+generator_question is independently controlled
+```
+
+Diagnostics tối thiểu gồm null/empty question; diff Unicode/whitespace từ raw sang canonical; character/token length theo tokenizer liên quan; canonical-versus-retrieval diff; rewrite drift; bảo toàn số hiệu văn bản, Điều/Khoản/Điểm và identifiers khác; số query variants trên mỗi sample; transform/config provenance; và, khi áp dụng được, tỷ lệ rewrite token không grounded trong original query hoặc corpus. Một rewrite hữu ích theo retrieval score vẫn không được promotion nếu thêm điều kiện pháp lý hoặc làm mất identifier quan trọng.
+
+## Cross-task LegalIR ↔ LegalQA mapping audit
+
+D00 phải tạo mapping report dựa trên explicit keys, không suy từ việc hai task cùng dùng một corpus. Report phải tách ba câu hỏi:
+
+1. **Observed structural relationship:** so sánh sample-ID sets; exact/canonical question text; overlap count/rate; duplicate-group cardinality; one-to-one, one-to-many và many-to-one cases; corpus/archive fingerprint; khả năng resolve LegalIR gold document IDs.
+2. **Allowed training/evaluation use:** kiểm tra rule/FAQ/forum artifact có thẩm quyền và lưu URL/version/access date. Question overlap hoặc file `train` không tự nó cấp quyền chuyển labels giữa tasks.
+3. **Reliable gold-evidence mapping:** xác minh label nói tới document, passage hay exact span, và kiểm tra mapping cho từng matched sample thay vì suy rộng toàn dataset.
+
+Snapshot trên chỉ chứng minh một **partial exact-question relationship** với disjoint sample IDs, cùng corpus archive và resolvable LegalIR document IDs. Với exact-matched question, LegalIR relevance label có thể tạo **gold-document mapping candidate** cho LegalQA nếu competition rules cho phép; nó không chứng minh document thực sự chứa mọi support cần cho QA answer, càng không tạo **gold evidence-span mapping**. Trạng thái use permission và QA support mapping vẫn `Planned`/unresolved cho đến khi có artifact audit.
 
 ## Ba lớp biểu diễn dữ liệu
 
@@ -217,7 +259,9 @@ Khi cần, đo riêng dense retriever tokenizer, reranker tokenizer và generato
 
 ## Corpus integrity contract
 
-Một corpus chỉ được gắn `Validated` khi có artifact chứng minh tối thiểu:
+### D06a — canonical corpus integrity
+
+D06a chạy trước khi freeze C0. Một corpus chỉ được gắn `Validated` khi có artifact chứng minh tối thiểu:
 
 - `document_id` unique và `chunk_id` unique;
 - canonical source text không rỗng, trừ exception được biện minh trong manifest;
@@ -225,19 +269,29 @@ Một corpus chỉ được gắn `Validated` khi có artifact chứng minh tố
 - không accidental duplicate chunk; intentional overlap/duplicate phải được flag và giải thích;
 - identical input + config tạo stable deterministic mapping;
 - preprocessing config, input data fingerprint, corpus fingerprint/hash và mapping manifest được lưu;
-- không silent document loss, silent parse-error skipping hoặc silent truncation;
-- corpus được index khớp đúng manifest dùng lúc evaluation.
+- source coverage được định lượng; không silent document loss, silent parse-error skipping hoặc silent truncation.
+
+D06a không yêu cầu index tồn tại. Gate thành công cho phép freeze:
+
+```text
+C0 = frozen canonical corpus baseline
+```
+
+### D06b — index ↔ corpus alignment
+
+D06b chạy sau khi build index cho một retriever và trước benchmark retriever đó:
 
 Với index artifact:
 
 ```text
 index item count
 ↔ chunk manifest count
-↔ ordered/set chunk IDs
+↔ chunk/document IDs
 ↔ corpus fingerprint
+↔ index fingerprint
 ```
 
-Legacy FAISS/index artifact, nếu có, không mặc định thỏa contract. Mỗi corpus/index pair phải qua D06.
+Gate phải phát hiện stale index, index build từ corpus khác, missing/extra ID, ordering mismatch khi backend phụ thuộc ordering, và encoder/index config không tương thích. Legacy FAISS/index artifact, nếu có, không mặc định thỏa contract. Mỗi corpus/index pair phải qua D06b; D06b là prerequisite của retriever benchmark, không phải prerequisite để tạo hoặc freeze source corpus.
 
 ### Reproducibility artifacts tối thiểu
 
@@ -245,8 +299,8 @@ Legacy FAISS/index artifact, nếu có, không mặc định thỏa contract. M�
 - versioned preprocessing config và code revision;
 - canonical document manifest;
 - chunk/evidence manifest với provenance;
-- corpus fingerprint và index fingerprint;
-- validation report gồm counts, exceptions, failures và deterministic-regeneration check;
+- corpus fingerprint; index fingerprint chỉ bắt buộc khi index đã được build;
+- D06a validation report gồm counts, exceptions, failures và deterministic-regeneration check; D06b alignment report cho từng index;
 - tokenizer/model revisions dùng cho length/truncation diagnostics.
 
 ## Data leakage contract
@@ -263,24 +317,54 @@ D00 và mọi training/evaluation split phải kiểm tra:
 
 Law text lặp lại không tự động là leakage: pháp luật có thể lặp, dẫn chiếu hoặc sửa đổi cùng wording. Leakage claim phải xét task semantics, split construction, source version và khả năng tạo shortcut; dedup policy không được xóa legal evidence chỉ vì text giống nhau.
 
+### Canonical local validation split
+
+Local validation dùng một **immutable split manifest**, không phải một lệnh random được chạy lại cho từng experiment. Generation phải deterministic; lưu fixed seed khi có randomness, explicit sample IDs cho từng split, grouping method/config/version và fingerprint của input data lẫn manifest. Không silently regenerate hoặc thay membership sau khi bắt đầu so sánh experiments.
+
+Preferred procedure:
+
+1. audit exact-duplicate questions;
+2. tạo duplicate groups từ canonical question identity;
+3. chỉ bổ sung near-duplicate groups khi phương pháp đủ precise và đã được audit để tránh gom nhầm các câu hỏi pháp lý khác nghĩa;
+4. đưa toàn bộ thành viên một group vào cùng split;
+5. giữ task-specific label distribution khi thực tế cho phép, nhưng không phá group boundary;
+6. lưu sample IDs, group IDs, generation config/seed, data fingerprint và split-manifest fingerprint;
+7. không tái sinh split âm thầm trong experiments; mọi thay đổi là một version mới, có lý do và làm mất comparability với run cũ nếu membership đổi.
+
+Nếu một pipeline dùng paired/cross-task supervision hoặc metrics, mọi exact-shared/canonical-shared question group liên quan phải được group xuyên LegalIR và LegalQA để không truyền cùng nội dung hoặc labels qua train/validation. Khi không có cross-task information flow, report vẫn phải lưu và kiểm tra overlap thay vì mặc định bỏ qua. Chưa khóa tỷ lệ train/validation; tỷ lệ là working configuration sẽ được chọn theo dataset size, label distribution và nhu cầu thống kê, rồi freeze trong manifest.
+
+```text
+public leaderboard != local validation set
+```
+
+Repeated public-leaderboard tuning không thay thế local held-out evaluation và phải được log như một leakage/tuning risk.
+
 ## Baseline và dependencies
 
 `C0` là canonical corpus baseline: một preprocessing/corpus configuration cố định, đơn giản, deterministic, auditable và đã qua integrity gate. `C0` không phải machine-learning model và không khẳng định chunk strategy tối ưu.
 
 ```text
-RAW DATA
+RAW TASK DATA
    ↓
-DATA VALIDATION
+question/document validation + canonical local split
    ↓
-CANONICAL CORPUS (C0)
+canonical question + canonical source corpus
    ↓
-CORPUS REPRESENTATION
+D06a
    ↓
-LEGALIR
+C0
    ↓
-EVIDENCE
+retrieval_query/retrieval_text + build retriever index
    ↓
-LEGALQA
+D06b
+   ↓
+LegalIR B0 → B1 → B2
+   ↓
+canonical evidence records
+   ↓
+LegalQA G0
+   ↓
+QA0 → QA1 → QA2 → QA3 → QA4
 ```
 
-Exception: QA0 closed-book không phụ thuộc corpus retrieval; QA0 gold-evidence oracle có thể chạy khi gold-evidence mapping riêng đã được verify. Mọi LegalIR comparison nghiêm túc phải cố định một validated corpus manifest, còn corpus-representation experiment phải cố định downstream retrieval stack. Chi tiết experiment nằm tại [05 — Experiment map](05_experiment_map.md).
+Exception: QA0 closed-book dùng `generator_question + G0`, không phụ thuộc LegalIR. QA0 oracle chỉ chạy theo granularity thực sự được verify: gold document, gold passage hoặc gold span; `gold-document oracle != gold-span oracle`. Mọi LegalIR comparison nghiêm túc phải cố định một D06a-validated corpus manifest và chỉ benchmark sau D06b của index tương ứng; corpus-representation experiment phải cố định downstream retrieval stack. Với mọi corpus variant: `new corpus variant → D06a → build index → D06b → benchmark`. Chi tiết experiment nằm tại [05 — Experiment map](05_experiment_map.md).
