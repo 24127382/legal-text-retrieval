@@ -146,3 +146,96 @@ Structure-aware/article-aware chunking không bị loại bỏ; nó được gi�
 **Next**
 
 Implement C0, sau đó xây B0 BM25 và đo candidate/document Recall@K trước khi tối ưu reranking. Chỉ sau baseline này mới so sánh alternative corpus representations bằng controlled experiments.
+
+## C03 — C0 fixed-window implementation
+
+**Date / commit:** 2026-09-13 / `57c49e1`
+
+**Question**
+
+Có thể tạo một corpus baseline hoàn toàn structure-independent, deterministic và phủ toàn bộ non-empty corpus hay không?
+
+**Configuration**
+
+```text
+character windows
+chunk_size = 2000
+overlap = 200
+step = 1800
+```
+
+Không normalization và không dùng article/chapter/clause boundaries.
+
+**Results**
+
+- 8.532 corpus documents tạo 199.816 chunks.
+- Chunks/document: median 13; p95 76; max 3.324.
+- Chunk length: median 2.000; p95 2.000; max 2.000 characters.
+- Có 20 zero-chunk documents, đúng bằng 20 empty passages; duplicate chunk IDs bằng 0.
+- Largest-document examples: `68843` → 3.324 chunks; `4644` → 1.676; `42223` → 610; `164898` → 546; `12964` → 422.
+
+**Validation**
+
+Đã verify các provenance invariants: `chunk["text"] == source[char_start:char_end]`; mọi non-empty document có chunks và empty document có zero chunks; chunk indexes liên tục từ 0; window step bằng 1.800; final chunk chạm source end; `document_id` map ngược về source; chunk IDs unique.
+
+**Interpretation**
+
+C0 cung cấp retrieval-unit baseline deterministic, model-independent, không phụ thuộc legal structure regex, phủ mọi non-empty document và giữ exact source provenance. Kết quả không chứng minh cấu hình `2000/200` là optimal.
+
+**Decision**
+
+Freeze cấu hình này cho experiment B0 đầu tiên. Không thay chunking trong khi đánh giá BM25. Structure-aware chunking là corpus-representation experiment riêng sau khi B0 có benchmark.
+
+## B00 — BM25 lexical baseline on C0
+
+**Date / commit:** 2026-09-13 / working-tree benchmark after `57c49e1`
+
+**Question**
+
+C0 + lexical BM25 có candidate coverage bao nhiêu trước khi thêm dense retrieval/reranking?
+
+**Fixed corpus**
+
+```text
+C0
+chunk_size = 2000
+overlap = 200
+```
+
+**Retrieval configuration**
+
+- Tokenizer: lowercase rồi lấy Unicode `\w+` tokens; giữ chữ cái tiếng Việt và digits, tách punctuation; không stemming, stopword removal, segmentation hay query expansion.
+- Implementation: `bm25s==0.3.11`, sparse index, explicit `method="lucene"`.
+- BM25 parameters: `k1=1.5`, `b=0.75`; không tune.
+- Chunk retrieval depth: `top_k_chunks=2000`. Depth 1.000 ban đầu cho 424/7.000 query dưới 200 unique documents; depth được tăng theo pool-cardinality requirement, không theo gold recall.
+- Document aggregation: max BM25 score của các retrieved chunks; tương đương giữ occurrence đầu tiên của mỗi document trong sorted chunk hits.
+- Chỉ giữ top 200 unique document IDs/query; full chunk-hit pools được aggregate và discard theo batch.
+
+This is a full-train zero-shot diagnostic benchmark, not a held-out validation score. Labels chỉ được dùng để tính diagnostics sau retrieval; run này không fit/tune BM25, chunk hay depth bằng relevance labels.
+
+**Results**
+
+| K | candidate Recall@K | zero-recall rate | full-recall rate |
+|---:|---:|---:|---:|
+| 10 | 0,841374 | 0,141000 | 0,824571 |
+| 20 | 0,895088 | 0,089857 | 0,880571 |
+| 50 | 0,937752 | 0,050286 | 0,925571 |
+| 100 | 0,959214 | 0,031714 | 0,949571 |
+| 200 | 0,973917 | 0,019571 | 0,966857 |
+
+- MRR: 0,611799.
+- Official-style top-5 precision: 0,161600; official-style top-5 recall: 0,761624.
+- 7.000 queries; 222 queries có zero Recall@100; 6.647 có full Recall@100; 1.393 có gold đầu tiên xuất hiện sau rank 5 nhưng không muộn hơn retained rank 200.
+- Unique documents từ 2.000-chunk pool: min 128; median 676; p95 979; 8 queries dưới 200 unique documents.
+- C0 construction: 2,75 s; index build: 32,59 s; retrieval + aggregation: 21,08 s trên local machine.
+- 199.816 chunks indexed; sparse score arrays chiếm 248.208.568 bytes (khoảng 236,7 MiB), chưa tính Python metadata/vocabulary overhead.
+
+**Interpretation**
+
+Candidate coverage tăng rõ theo depth, từ 0,8414 ở K=10 lên 0,9739 ở K=200, nhưng marginal gain giảm dần: gain lần lượt khoảng 5,37; 4,27; 2,15 và 1,47 percentage points qua các depth kế tiếp. Recall@100/200 đã gần saturation nhưng chưa bão hòa hoàn toàn: 222 query vẫn zero ở K=100 và 137 query vẫn zero ở K=200.
+
+Gap giữa official-style top-5 recall 0,7616 và candidate Recall@100/200 lần lượt khoảng 19,76/21,23 percentage points là lớn. Evidence sơ bộ cho thấy ranking/final top-5 selection là bottleneck đáng kể khi lexical candidate pool đã chứa gold sâu hơn; đồng thời zero Recall@200 còn 1,96% cho thấy retrieval coverage vẫn là residual bottleneck ở một nhóm nhỏ. Run này chưa cô lập nguyên nhân lexical mismatch, annotation exhaustiveness hay corpus representation nên không đủ để kết luận dense/hybrid chắc chắn sẽ cải thiện.
+
+**Decision**
+
+Giữ B00 làm lexical reference trên C0. Trước hyperparameter optimization, tạo fixed validation split; trước khi chọn dense/hybrid hay reranker, inspect zero-recall và deep-rank samples để tách coverage failure khỏi ranking failure. Không tự động chuyển sang dense/hybrid và không thay C0 từ result này.
