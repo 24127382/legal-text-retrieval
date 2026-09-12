@@ -217,8 +217,8 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# Data
-data/
+# Raw competition data at the repository root
+/data/
 *.zip
 
 .DS_Store
