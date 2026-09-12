@@ -295,11 +295,11 @@ Freeze `legalir_split_v1`. Train dành cho supervised/domain-adaptation experime
 
 **Question**
 
-Pattern của full-train zero-shot B00 có giữ trên fixed dev/holdout hay không, và dev failures nghiêng về candidate coverage hay document ranking?
+Pattern của full-train zero-shot BM25 diagnostic có giữ trên fixed dev/holdout hay không, và dev failures nghiêng về candidate coverage hay document ranking?
 
 **Fixed control**
 
-Giữ nguyên B00/C0: character windows 2.000/overlap 200; `bm25s==0.3.11`, `method="lucene"`, `k1=1.5`, `b=0.75`; lowercase Unicode `\w+`; `top_k_chunks=2000`; max-chunk-score document aggregation; giữ top 200 unique documents. Index build trên toàn bộ 8.532-document competition corpus, tạo 199.816 C0 chunks. Chỉ query subset thay đổi.
+Giữ nguyên fixed-window BM25 reference: character windows 2.000/overlap 200; `bm25s==0.3.11`, `method="lucene"`, `k1=1.5`, `b=0.75`; lowercase Unicode `\w+`; `top_k_chunks=2000`; max-chunk-score document aggregation; giữ top 200 unique documents. Index build trên toàn bộ 8.532-document competition corpus, tạo 199.816 fixed character-window chunks. Chỉ query subset thay đổi.
 
 ### DEV metrics
 
@@ -405,10 +405,10 @@ Các bảng sau lưu tối đa 20 dev examples/family; không gán semantic caus
 
 ### Interpretation
 
-So với full-train diagnostic B00, dev/holdout giữ cùng pattern. Candidate Recall@100/200 lần lượt là 0,9534/0,9747 trên dev và 0,9522/0,9700 trên holdout, gần full-train 0,9592/0,9739. Official-style top-5 recall là 0,7615 trên dev và 0,7443 trên holdout, so với full-train 0,7616. Holdout thấp hơn nhẹ ở top-5/MRR nhưng không thay đổi qualitative conclusion.
+So với full-train BM25 diagnostic, dev/holdout giữ cùng pattern. Candidate Recall@100/200 lần lượt là 0,9534/0,9747 trên dev và 0,9522/0,9700 trên holdout, gần full-train 0,9592/0,9739. Official-style top-5 recall là 0,7615 trên dev và 0,7443 trên holdout, so với full-train 0,7616. Holdout thấp hơn nhẹ ở top-5/MRR nhưng không thay đổi qualitative conclusion.
 
-Khoảng cách Recall@200 với top-5 recall vẫn lớn: khoảng 21,32 percentage points trên dev và 22,57 points trên holdout. Trên dev, 207 ranking failures lớn hơn nhiều 19 coverage failures. Đây là evidence aggregate rằng ranking/final selection là bottleneck chính của B00 trên split v1; diagnostics chưa xác định lexical mismatch, annotation error hay corpus-representation error.
+Khoảng cách Recall@200 với top-5 recall vẫn lớn: khoảng 21,32 percentage points trên dev và 22,57 points trên holdout. Trên dev, 207 ranking failures lớn hơn nhiều 19 coverage failures. Đây là evidence aggregate rằng ranking/final selection là bottleneck chính của fixed-window BM25 reference trên split v1; diagnostics chưa xác định lexical mismatch, annotation error hay corpus-representation error.
 
 ### Decision
 
-Giữ B00 làm unchanged reference và freeze split v1. Pattern `high Recall@100/200` nhưng `significantly lower top-5 recall` được lặp lại, nên major axis tiếp theo là **document ranking / chunk→document aggregation**, chỉ tune/chọn method bằng dev. Holdout không được dùng để thay đổi method. Task này không implement B01.
+Giữ fixed-window BM25 run làm unchanged reference và freeze split v1. Pattern `high Recall@100/200` nhưng `significantly lower top-5 recall` được lặp lại, nên major axis tiếp theo là **document ranking / chunk→document aggregation**, chỉ tune/chọn method bằng dev. Holdout không được dùng để thay đổi method. Task này không implement retrieval, aggregation hay reranking alternative nào.
