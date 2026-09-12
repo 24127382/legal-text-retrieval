@@ -352,25 +352,79 @@ def audit_cross_task(
 
 def audit_all(
     *,
-    legal_ir_path: str | Path,
-    legal_qa_path: str | Path,
-    corpus_path: str | Path,
+    data_root: str | Path,
+    split_filename: str = "train.json",
 ) -> dict[str, Any]:
-    """Load and audit one raw snapshot using caller-provided paths."""
+    """Audit the current competition directory layout below ``data_root``.
+
+    Expected layout::
+
+        data_root/
+            LegalIR/{split_filename}
+            LegalIR/selected-contexts/*.json
+            LegalQA/{split_filename}
+            LegalQA/selected-contexts/*.json
+
+    The caller still controls the root path, so the same API works locally and
+    on Kaggle. Both corpus snapshots are fingerprinted instead of assuming they
+    are equal.
+    """
+
+    root = Path(data_root)
+    legal_ir_path = root / "LegalIR" / split_filename
+    legal_qa_path = root / "LegalQA" / split_filename
+    legal_ir_corpus_path = root / "LegalIR" / "selected-contexts"
+    legal_qa_corpus_path = root / "LegalQA" / "selected-contexts"
 
     legal_ir = load_legal_ir(legal_ir_path)
     legal_qa = load_legal_qa(legal_qa_path)
-    corpus = load_corpus(corpus_path)
+    legal_ir_corpus_fingerprint = fingerprint_path(legal_ir_corpus_path)
+    legal_qa_corpus_fingerprint = fingerprint_path(legal_qa_corpus_path)
+    corpora_match = (
+        legal_ir_corpus_fingerprint["sha256"]
+        == legal_qa_corpus_fingerprint["sha256"]
+    )
+
+    legal_ir_corpus = load_corpus(legal_ir_corpus_path)
+    legal_ir_corpus_audit = audit_corpus(legal_ir_corpus)
+    legal_ir_audit = audit_legal_ir(legal_ir, legal_ir_corpus)
+
+    if corpora_match:
+        legal_qa_corpus_audit = legal_ir_corpus_audit
+    else:
+        legal_qa_corpus_audit = audit_corpus(load_corpus(legal_qa_corpus_path))
+
     return {
-        "report_schema_version": 1,
-        "fingerprints": {
-            "legal_ir": fingerprint_path(legal_ir_path),
-            "legal_qa": fingerprint_path(legal_qa_path),
-            "corpus": fingerprint_path(corpus_path),
+        "report_schema_version": 2,
+        "layout": {
+            "data_root": str(root),
+            "split_filename": split_filename,
         },
-        "legal_ir": audit_legal_ir(legal_ir, corpus),
+        "fingerprints": {
+            "legal_ir": {
+                "dataset": fingerprint_path(legal_ir_path),
+                "corpus": legal_ir_corpus_fingerprint,
+            },
+            "legal_qa": {
+                "dataset": fingerprint_path(legal_qa_path),
+                "corpus": legal_qa_corpus_fingerprint,
+            },
+        },
+        "corpora": {
+            "comparison": {
+                "exact_snapshot_match": corpora_match,
+                "basis": (
+                    "SHA-256 over sorted relative file paths, sizes, and file hashes"
+                ),
+                "legal_qa_audit_reused_from": (
+                    "legal_ir" if corpora_match else None
+                ),
+            },
+            "legal_ir": legal_ir_corpus_audit,
+            "legal_qa": legal_qa_corpus_audit,
+        },
+        "legal_ir": legal_ir_audit,
         "legal_qa": audit_legal_qa(legal_qa),
-        "corpus": audit_corpus(corpus),
         "cross_task": audit_cross_task(legal_ir, legal_qa),
     }
 

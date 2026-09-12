@@ -12,7 +12,7 @@ Các dimensions dưới đây là controllable research axes. Baseline candidate
 |---|---|---|---|---|
 | Normalization | NFC/line ending/controlled whitespace, source-preserving | Rule-specific artifact removal đã audit | Learned rewriting/correction | Không xóa numbering, dấu, punctuation hoặc legal wording. |
 | Query representation | `raw_question` bất biến; `canonical_question` source-preserving; `retrieval_query` mặc định từ canonical | Versioned citation normalization/rewrite/multi-query/PRF branch, luôn giữ provenance về canonical | Generator-side rewriting | Retrieval transform không overwrite câu hỏi gốc; `generator_question` được kiểm soát độc lập. |
-| Legal structure parsing | Conservative headings/boundaries + fallback | Multiple parser rules theo document fingerprint | Learned structure parser | Boundary phải có span/provenance diagnostics; code hiện tại chỉ `Code present`. |
+| Legal structure parsing | Conservative headings/boundaries + fallback | Multiple parser rules theo document fingerprint | Learned structure parser | Boundary phải có span/provenance diagnostics; parser hiện chưa được implement lại. |
 | Retrieval unit | Một policy deterministic, auditable | Article/clause/point khi meaningful; structure-aware bounded chunks | Learned segmentation | Không có một level phù hợp mọi document. |
 | Chunk size/overlap | Fixed config được log | Token-bounded/sliding-window ablation | Query-adaptive chunking | Đo coverage, duplication, truncation; giữ structural policy fixed khi đổi size. |
 | Multi-granularity | Single-granularity control | Document + article/clause indexes | Learned routing giữa granularities | Cần dedup/aggregation và cost accounting. |

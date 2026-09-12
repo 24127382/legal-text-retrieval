@@ -56,7 +56,7 @@ Chạy D01 minimal normalization, D02 legal-structure parsing QC và D06a canoni
 - **GO:** source-preserving representation, explicit `source_text`/`retrieval_text`, complete chunk→document→source provenance, deterministic regeneration và D06a corpus/manifest consistency.
 - **NO-GO:** silent parse skip/document loss; orphan/duplicate không giải thích; source-span mismatch hoặc corpus fingerprint không tái lập.
 
-Parser/chunker/validator hiện tại chỉ `Code present`; code existence không mở gate C0.
+Raw schemas/loaders/audit hiện tại chỉ `Code present`; parser/chunker chưa được implement lại và code existence không mở gate C0.
 
 ## Phase 3 — LegalIR B0/B1/B2
 

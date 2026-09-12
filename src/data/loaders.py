@@ -192,10 +192,11 @@ def _load_corpus_zip(path: Path) -> list[CorpusDocument]:
 
 
 def load_corpus(path: str | Path) -> list[CorpusDocument]:
-    """Load selected contexts from a ZIP, JSON file, or JSON directory.
+    """Load selected contexts from a JSON directory, ZIP, or JSON file.
 
-    ZIP members and directory files are read in sorted name order. Archives are
-    read directly and are never extracted.
+    Directory files and ZIP members are read in sorted name order. Archives are
+    still supported directly for untouched competition downloads and are never
+    extracted by this loader.
     """
 
     input_path = Path(path)

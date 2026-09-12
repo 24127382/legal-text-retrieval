@@ -31,7 +31,7 @@ raw data → D00 audit → D01 minimal normalization → D02 parser QC
 
 `C0` là configuration preprocessing/corpus cố định để các LegalIR experiments so sánh được; **không phải machine-learning model** và không tuyên bố chunking strategy tối ưu. C0 tối thiểu phải có canonical document manifest, chunk/evidence manifest, `source_text`/`retrieval_text` distinction, chunk→document→source provenance, preprocessing config, input/corpus fingerprints và D06a validation report. Index chưa cần tồn tại để freeze C0. Contract chi tiết ở [00 — Data contract và preprocessing](00_data_contract_and_preprocessing.md).
 
-Baseline C0 đầu tiên phải đơn giản, deterministic và auditable. Parser/chunker/validator trong `src/` là `Code present`; C0 vẫn `Planned` cho đến khi D00/D01/D02 và D06a cung cấp artifact đạt gate. Sau đó, mỗi index build cho C0 hoặc corpus variant phải qua D06b trước retriever benchmark.
+Baseline C0 đầu tiên phải đơn giản, deterministic và auditable. Raw schemas/loaders/audit trong `src/data/` là `Code present`; parser/chunker và C0 vẫn `Planned` cho đến khi D00/D01/D02 và D06a cung cấp artifact đạt gate. Sau đó, mỗi index build cho C0 hoặc corpus variant phải qua D06b trước retriever benchmark.
 
 Quy tắc attribution:
 

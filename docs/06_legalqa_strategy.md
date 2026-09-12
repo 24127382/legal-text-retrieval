@@ -65,7 +65,7 @@ QA0–QA4 mặc định giữ G0 cố định. Một successor phải có ID/con
 
 ## Cross-task mapping và oracle granularity
 
-Audit local hiện quan sát train sample IDs rời nhau nhưng có 21 exact-shared question text, với mapping gồm `1:1`, `1:2`, `1:3` và `2:1`; public-official có một exact-shared question và cũng không chung sample ID. Hai task dùng local corpus archives byte-identical, và các LegalIR gold document IDs quan sát được resolve về archive. Đây là structural relationship, không phải full pairing.
+Audit local hiện quan sát train sample IDs rời nhau nhưng có 21 exact-shared question text, với mapping gồm `1:1`, `1:2`, `1:3` và `2:1`; public-official có một exact-shared question và cũng không chung sample ID. Hai task có local `selected-contexts/` directories cùng fingerprint, và các LegalIR gold document IDs quan sát được resolve về corpus LegalIR. Đây là structural relationship, không phải full pairing.
 
 Ba khái niệm không được gộp:
 

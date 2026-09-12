@@ -15,7 +15,7 @@ src/                         → current implementation/prototype
 
 `data/` bị Git ignore. Mọi schema hoặc thống kê nêu là quan sát từ snapshot local phải được ghi như vậy; không được suy ra dữ liệu đó đã được commit, không copy raw competition data vào Git, và không mở rộng quan sát local thành claim về private/unavailable splits.
 
-Trạng thái được dùng thống nhất: `Code present`, `Validated`, `Benchmarked`, `Planned`, `Research candidate`, `Speculative`. Parser/chunker/validator hiện có trong `src/` chỉ là `Code present`; chưa có artifact trong repository chứng minh boundary hoặc corpus hiện tại là `Validated` hay `Benchmarked`.
+Trạng thái được dùng thống nhất: `Code present`, `Validated`, `Benchmarked`, `Planned`, `Research candidate`, `Speculative`. Hiện chỉ raw schema/loader/audit trong `src/data/` là `Code present`; parser, chunker, retrieval và modeling chưa được implement lại. Chưa có artifact được version-control để gọi raw snapshot hoặc canonical corpus là `Validated` hay `Benchmarked`.
 
 ## Preprocessing là một research layer
 
@@ -52,11 +52,40 @@ Quan sát read-only ngày 2026-09-12 trên máy hiện tại, không phải arti
 - Trong train có 21 exact-shared question text, phủ 22/7.000 LegalIR record (0,314%) và 26/7.000 LegalQA record (0,371%). Cardinality theo question text là 16 nhóm `1:1`, ba nhóm `1:2`, một nhóm `1:3` và một nhóm `2:1`; vì vậy exact text overlap không tạo một mapping sample one-to-one tổng quát. Public-official có đúng một exact-shared question text (`1:1`), phủ 1/1.000 record (0,1%) của mỗi task.
 - Exact-duplicate question groups tồn tại trong train: LegalIR có 13 nhóm/26 record và LegalQA có 14 nhóm/29 record. Ý nghĩa leakage hoặc paired-task của các nhóm này chưa được kết luận chỉ từ text equality.
 - Trong local LegalIR train, gold-list length quan sát được từ 1 đến 5, không có list rỗng hoặc dài hơn 5. Đây không phải claim cho dev/private/unavailable splits.
-- Hai local `selected-contexts.zip` byte-identical theo SHA-256 tại thời điểm kiểm tra và chứa 8.532 JSON document. Field quan sát được là `id`, `link`, `passage`; `name` có ở một phần document. Toàn bộ 3.105 unique gold document ID trong LegalIR train resolve được về filename trong archive; riêng 22 LegalIR record có exact-shared question với LegalQA chứa 24 gold assignments/19 unique document ID và tất cả đều resolve được.
+- Mỗi task hiện có một thư mục local `selected-contexts/` chứa 8.532 JSON document. Fingerprint toàn thư mục của LegalIR và LegalQA byte-identical tại thời điểm kiểm tra (`f1352eecb09ddb6eda530324a3d84198b8cc480f59f05edf284b2338a4c498c7`). Field quan sát được là `id`, `link`, `passage`; `name` có ở một phần document. Toàn bộ 3.105 unique gold document ID trong LegalIR train resolve được về corpus LegalIR; riêng 22 LegalIR record có exact-shared question với LegalQA chứa 24 gold assignments/19 unique document ID và tất cả đều resolve được.
 - Snapshot có 20 record với `passage` rỗng. Đây là lý do phải báo lỗi/ngoại lệ minh bạch, không phải quyền tự động drop record.
 - Raw `passage` character length rất lệch (median 23.108, p95 135.624, max 5.983.358 ký tự); đây chỉ là character diagnostic, không thay token-length measurement theo model. Có exact-duplicate non-empty passages trong snapshot, nhưng text lặp không tự động là leakage.
 
 Các con số trên chưa thay thế D00: cần manifest, script/audit artifact tái lập được và fingerprint được lưu ngoài raw data. Private split, các bản dữ liệu khác, semantics của `link`, chất lượng `name`, document version/effective date và gold-document/passage/span mapping vẫn chưa được xác minh.
+
+## Raw-data implementation hiện tại (`Code present`)
+
+Layout local quan sát được và được `audit_all` hỗ trợ là:
+
+```text
+data_root/
+├── LegalIR/
+│   ├── train.json
+│   ├── public-official.json
+│   └── selected-contexts/*.json
+└── LegalQA/
+    ├── train.json
+    ├── public-official.json
+    └── selected-contexts/*.json
+```
+
+Caller truyền root; code không hard-code đường dẫn local hoặc Kaggle:
+
+```python
+from src.data import audit_all, save_report
+
+report = audit_all(data_root="data", split_filename="train.json")
+save_report(report, "data_audit.json")
+```
+
+`src/data/schemas.py` giữ representation raw và phân biệt field missing, JSON `null`, chuỗi rỗng và list rỗng. `src/data/loaders.py` đọc JSON directory theo thứ tự tên deterministic; ZIP vẫn được hỗ trợ trực tiếp cho competition download chưa giải nén. Loader không normalize, parse, chunk hoặc silently drop record. `src/data/audit.py` tạo JSON-serializable report schema version 2, fingerprint dataset/corpus của từng task, so sánh hai corpus snapshot thay vì mặc định chúng giống nhau, và chỉ reuse corpus audit khi directory fingerprints khớp chính xác.
+
+Unit tests và full-snapshot smoke test hiện pass, nhưng đây là validation của code path trên snapshot local, không phải artifact đủ để promotion toàn bộ data/corpus layer thành `Validated`.
 
 ## Question/query representation contract
 
@@ -92,11 +121,11 @@ Diagnostics tối thiểu gồm null/empty question; diff Unicode/whitespace t�
 
 D00 phải tạo mapping report dựa trên explicit keys, không suy từ việc hai task cùng dùng một corpus. Report phải tách ba câu hỏi:
 
-1. **Observed structural relationship:** so sánh sample-ID sets; exact/canonical question text; overlap count/rate; duplicate-group cardinality; one-to-one, one-to-many và many-to-one cases; corpus/archive fingerprint; khả năng resolve LegalIR gold document IDs.
+1. **Observed structural relationship:** so sánh sample-ID sets; exact/canonical question text; overlap count/rate; duplicate-group cardinality; one-to-one, one-to-many và many-to-one cases; corpus snapshot fingerprint; khả năng resolve LegalIR gold document IDs.
 2. **Allowed training/evaluation use:** kiểm tra rule/FAQ/forum artifact có thẩm quyền và lưu URL/version/access date. Question overlap hoặc file `train` không tự nó cấp quyền chuyển labels giữa tasks.
 3. **Reliable gold-evidence mapping:** xác minh label nói tới document, passage hay exact span, và kiểm tra mapping cho từng matched sample thay vì suy rộng toàn dataset.
 
-Snapshot trên chỉ chứng minh một **partial exact-question relationship** với disjoint sample IDs, cùng corpus archive và resolvable LegalIR document IDs. Với exact-matched question, LegalIR relevance label có thể tạo **gold-document mapping candidate** cho LegalQA nếu competition rules cho phép; nó không chứng minh document thực sự chứa mọi support cần cho QA answer, càng không tạo **gold evidence-span mapping**. Trạng thái use permission và QA support mapping vẫn `Planned`/unresolved cho đến khi có artifact audit.
+Snapshot trên chỉ chứng minh một **partial exact-question relationship** với disjoint sample IDs, hai corpus directories có cùng fingerprint và resolvable LegalIR document IDs. Với exact-matched question, LegalIR relevance label có thể tạo **gold-document mapping candidate** cho LegalQA nếu competition rules cho phép; nó không chứng minh document thực sự chứa mọi support cần cho QA answer, càng không tạo **gold evidence-span mapping**. Trạng thái use permission và QA support mapping vẫn `Planned`/unresolved cho đến khi có artifact audit.
 
 ## Ba lớp biểu diễn dữ liệu
 

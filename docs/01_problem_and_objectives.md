@@ -91,7 +91,7 @@ Các JSON task hiện có trong local `data/LegalIR/` và `data/LegalQA/` đều
 - LegalIR train: value có `question` và `answer`, trong đó `answer` là list document ID; public-official giữ cùng hai field và để `answer: null`.
 - LegalQA train: value có `question` và `answer`, trong đó `answer` là chuỗi; public-official giữ cùng hai field và để `answer: null`.
 
-Local corpus archive quan sát được chứa document JSON với `id`, `passage`, `link` và optional `name`. Đây là quan sát read-only trên dữ liệu bị Git ignore ở máy hiện tại, không phải tuyên bố các file đó được version-control hoặc schema này đúng cho mọi split/phiên bản. Contract đầy đủ nằm tại [00 — Data contract và preprocessing](00_data_contract_and_preprocessing.md).
+Hai local corpus directories `data/LegalIR/selected-contexts/` và `data/LegalQA/selected-contexts/` quan sát được chứa document JSON với `id`, `passage`, `link` và optional `name`; hai directory có cùng fingerprint tại thời điểm audit. Đây là quan sát read-only trên dữ liệu bị Git ignore ở máy hiện tại, không phải tuyên bố các file đó được version-control hoặc schema này đúng cho mọi split/phiên bản. Contract và API hiện tại nằm tại [00 — Data contract và preprocessing](00_data_contract_and_preprocessing.md).
 
 Quan sát local hiện chỉ cho thấy partial exact-question overlap giữa hai task, trong khi sample-ID sets rời nhau và mapping theo text có cả one-to-many/many-to-one. Đây là data property cần D00 audit, không phải bằng chứng hai task được paired toàn bộ, không phải permission dùng cross-task labels, và không phải gold evidence-span mapping.
 
@@ -103,7 +103,7 @@ Quan sát local hiện chỉ cho thấy partial exact-question overlap giữa ha
 - Data & Corpus Representation là prerequisite của LegalIR và evidence-grounded LegalQA.
 - LegalIR và LegalQA có thể chia sẻ tầng retrieval nhưng có submission adapter khác nhau.
 - Canonical local validation split và question/corpus fingerprints là thành phần của reproducible research, không phải tùy chọn của từng run.
-- Code trong `src/` có parser/chunker và prototype dense chunk retrieval; đây là `Code present`, không phải `Validated` hay `Benchmarked`.
+- Code trong `src/data/` có raw schemas, source-preserving loaders và structured audit; đây là `Code present` với tests/smoke test local. Parser, chunker, dense retrieval và modeling chưa được implement lại.
 - B2 trong tài liệu là reference design `Planned`, không phải hệ thống đã hoàn thành.
 
 ### Unknown

@@ -9,6 +9,7 @@ from pathlib import Path
 from src.data import (
     MISSING,
     DataSchemaError,
+    audit_all,
     audit_corpus,
     audit_cross_task,
     audit_legal_ir,
@@ -73,20 +74,30 @@ class RawDataTests(unittest.TestCase):
         self.assertIs(qa[1].answer, MISSING)
 
     def test_corpus_missing_name_and_empty_passage_are_preserved(self) -> None:
-        archive_path = self.root / "contexts.zip"
-        with zipfile.ZipFile(archive_path, "w") as archive:
-            archive.writestr(
-                "selected-contexts/context_7.json",
-                json.dumps({"id": 7, "passage": "", "link": "https://example.test/7"}),
-            )
+        corpus_path = self.root / "selected-contexts"
+        corpus_path.mkdir()
+        (corpus_path / "context_7.json").write_text(
+            json.dumps({"id": 7, "passage": "", "link": "https://example.test/7"}),
+            encoding="utf-8",
+        )
 
-        documents = load_corpus(archive_path)
+        documents = load_corpus(corpus_path)
         report = audit_corpus(documents)
 
         self.assertEqual(documents[0].passage, "")
         self.assertIs(documents[0].name, MISSING)
         self.assertEqual(report["empty_passage_count"], 1)
         self.assertEqual(report["missing_name_count"], 1)
+
+    def test_zip_corpus_remains_supported_without_extraction(self) -> None:
+        archive_path = self.root / "contexts.zip"
+        with zipfile.ZipFile(archive_path, "w") as archive:
+            archive.writestr(
+                "selected-contexts/context_7.json",
+                json.dumps({"id": 7, "passage": "A", "link": "source"}),
+            )
+
+        self.assertEqual(load_corpus(archive_path)[0].id, 7)
 
     def test_duplicate_ids_and_unresolved_gold_are_reported(self) -> None:
         corpus = [
@@ -159,6 +170,54 @@ class RawDataTests(unittest.TestCase):
                 "many_to_one": 1,
                 "many_to_many": 0,
             },
+        )
+
+    def test_audit_all_understands_task_directories_and_compares_corpora(self) -> None:
+        for task, answer in (("LegalIR", ["7"]), ("LegalQA", "Answer")):
+            task_path = self.root / task
+            corpus_path = task_path / "selected-contexts"
+            corpus_path.mkdir(parents=True)
+            (task_path / "train.json").write_text(
+                json.dumps({"1": {"question": "Question", "answer": answer}}),
+                encoding="utf-8",
+            )
+            (corpus_path / "context_7.json").write_text(
+                json.dumps({"id": 7, "passage": "Passage", "link": "source"}),
+                encoding="utf-8",
+            )
+
+        report = audit_all(data_root=self.root)
+
+        self.assertEqual(report["report_schema_version"], 2)
+        self.assertTrue(report["corpora"]["comparison"]["exact_snapshot_match"])
+        self.assertEqual(
+            report["corpora"]["comparison"]["legal_qa_audit_reused_from"],
+            "legal_ir",
+        )
+        self.assertEqual(report["corpora"]["legal_ir"]["document_count"], 1)
+        self.assertEqual(
+            report["legal_ir"]["gold"]["corpus_resolution"][
+                "unresolved_unique_document_id_count"
+            ],
+            0,
+        )
+
+        qa_context = self.root / "LegalQA" / "selected-contexts" / "context_7.json"
+        qa_context.write_text(
+            json.dumps({"id": 7, "passage": "Different", "link": "source"}),
+            encoding="utf-8",
+        )
+        different_report = audit_all(data_root=self.root)
+
+        self.assertFalse(
+            different_report["corpora"]["comparison"]["exact_snapshot_match"]
+        )
+        self.assertIsNone(
+            different_report["corpora"]["comparison"]["legal_qa_audit_reused_from"]
+        )
+        self.assertEqual(
+            different_report["corpora"]["legal_qa"]["passage_character_length"]["max"],
+            len("Different"),
         )
 
 

@@ -135,7 +135,7 @@ Các diagnostics này là local research diagnostics theo [00 — Data contract 
 - truncation mới phát sinh do enrichment theo từng tokenizer;
 - kiểm tra derived prefix không overwrite hoặc bị trình bày như original legal text.
 
-Corpus không được gọi `Validated` nếu D06a còn silent document loss, silent parse-error skipping, orphan chunk, unexplained duplicate hoặc mapping không tái tạo được. C0 có thể freeze sau D06a mà chưa có index; index không khớp manifest làm D06b fail và chặn retriever benchmark, không phủ định source corpus chỉ vì index chưa được tạo. Parser/chunker/validator code hiện có chỉ là `Code present` cho đến khi validation artifacts chứng minh các checks tương ứng.
+Corpus không được gọi `Validated` nếu D06a còn silent document loss, silent parse-error skipping, orphan chunk, unexplained duplicate hoặc mapping không tái tạo được. C0 có thể freeze sau D06a mà chưa có index; index không khớp manifest làm D06b fail và chặn retriever benchmark, không phủ định source corpus chỉ vì index chưa được tạo. Raw audit code hiện có chỉ là `Code present`; parser/chunker chưa được implement lại và mọi component tương lai vẫn cần validation artifacts cho các checks tương ứng.
 
 ### Candidate document recall
 
