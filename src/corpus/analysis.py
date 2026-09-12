@@ -28,6 +28,8 @@ _CANDIDATE_PATTERNS = {
 _EXAMPLE_LIMIT = 10
 _OUTLIER_LIMIT = 5
 _EXAMPLE_CHARACTER_LIMIT = 200
+_ARTICLE_LENGTH_THRESHOLDS = (2_000, 5_000, 10_000, 20_000)
+_NO_ARTICLE_LENGTH_THRESHOLDS = (1_000, 5_000, 10_000)
 
 
 def _distribution(values: list[int]) -> dict:
@@ -85,6 +87,23 @@ def _document_summary(record: dict) -> dict:
     }
 
 
+def _candidate_article_segments(
+    document_id, passage: str, candidates: list[tuple[int, str]]
+) -> list[dict]:
+    segments = []
+    for index, (start, heading) in enumerate(candidates):
+        end = candidates[index + 1][0] if index + 1 < len(candidates) else len(passage)
+        segments.append(
+            {
+                "document_id": document_id,
+                "article_index": index + 1,
+                "candidate_heading": heading,
+                "character_length": end - start,
+            }
+        )
+    return segments
+
+
 def analyze_corpus(documents: list[dict]) -> dict:
     """Return compact, JSON-serializable diagnostics for raw corpus documents.
 
@@ -105,8 +124,11 @@ def analyze_corpus(documents: list[dict]) -> dict:
             )
 
         lines = passage.splitlines()
+        lines_with_endings = passage.splitlines(keepends=True)
         marker_counts = {name: 0 for name in _CANDIDATE_PATTERNS}
-        for line in lines:
+        article_candidates = []
+        line_start = 0
+        for line, line_with_ending in zip(lines, lines_with_endings):
             for name, pattern in _CANDIDATE_PATTERNS.items():
                 match = pattern.match(line)
                 if not match:
@@ -114,6 +136,8 @@ def analyze_corpus(documents: list[dict]) -> dict:
 
                 marker_counts[name] += 1
                 example = _example_line(line)
+                if name == "article":
+                    article_candidates.append((line_start, example))
                 if (
                     len(fallback_examples[name]) < _EXAMPLE_LIMIT
                     and example not in seen_examples[name]
@@ -122,6 +146,11 @@ def analyze_corpus(documents: list[dict]) -> dict:
                     seen_examples[name].add(example)
                 variant_key = _format_variant_key(name, line, match)
                 variant_examples[name].setdefault(variant_key, example)
+            line_start += len(line_with_ending)
+
+        article_segments = _candidate_article_segments(
+            document.get("id"), passage, article_candidates
+        )
 
         records.append(
             {
@@ -131,6 +160,10 @@ def analyze_corpus(documents: list[dict]) -> dict:
                 "blank_line_count": sum(not line.strip() for line in lines),
                 "marker_counts": marker_counts,
                 "is_empty": passage == "",
+                "candidate_article_segments": article_segments,
+                "prefix_character_length": (
+                    article_candidates[0][0] if article_candidates else None
+                ),
             }
         )
 
@@ -139,6 +172,23 @@ def analyze_corpus(documents: list[dict]) -> dict:
     blank_line_counts = [record["blank_line_count"] for record in records]
     article_counts = [record["marker_counts"]["article"] for record in records]
     non_empty_records = [record for record in records if not record["is_empty"]]
+    records_with_articles = [
+        record for record in records if record["candidate_article_segments"]
+    ]
+    records_without_articles = [
+        record for record in records if not record["candidate_article_segments"]
+    ]
+    candidate_article_segments = [
+        segment
+        for record in records_with_articles
+        for segment in record["candidate_article_segments"]
+    ]
+    article_segment_lengths = [
+        segment["character_length"] for segment in candidate_article_segments
+    ]
+    prefix_lengths = [
+        record["prefix_character_length"] for record in records_with_articles
+    ]
 
     marker_coverage = {}
     for name in _CANDIDATE_PATTERNS:
@@ -188,6 +238,48 @@ def analyze_corpus(documents: list[dict]) -> dict:
                 examples.append(example)
         marker_examples[name] = examples
 
+    article_length_thresholds = {}
+    for threshold in _ARTICLE_LENGTH_THRESHOLDS:
+        count = sum(length > threshold for length in article_segment_lengths)
+        article_length_thresholds[f"greater_than_{threshold}_characters"] = {
+            "count": count,
+            "fraction": (
+                round(count / len(article_segment_lengths), 6)
+                if article_segment_lengths
+                else 0.0
+            ),
+        }
+
+    no_article_length_thresholds = {}
+    for threshold in _NO_ARTICLE_LENGTH_THRESHOLDS:
+        count = sum(
+            record["character_length"] < threshold
+            for record in records_without_articles
+        )
+        no_article_length_thresholds[f"under_{threshold}_characters"] = {
+            "count": count,
+            "fraction": (
+                round(count / len(records_without_articles), 6)
+                if records_without_articles
+                else 0.0
+            ),
+        }
+
+    longest_article_segments = sorted(
+        candidate_article_segments,
+        key=lambda segment: segment["character_length"],
+        reverse=True,
+    )[:_OUTLIER_LIMIT]
+    shortest_article_segments = sorted(
+        candidate_article_segments,
+        key=lambda segment: segment["character_length"],
+    )[:_OUTLIER_LIMIT]
+    longest_prefixes = sorted(
+        records_with_articles,
+        key=lambda record: record["prefix_character_length"],
+        reverse=True,
+    )[:_OUTLIER_LIMIT]
+
     return {
         "document_count": len(documents),
         "document_size": {
@@ -208,6 +300,63 @@ def analyze_corpus(documents: list[dict]) -> dict:
             )
             if records
             else 0.0,
+        },
+        "candidate_article_segments": {
+            "total_segment_count": len(candidate_article_segments),
+            "document_count": len(records_with_articles),
+            "document_fraction": (
+                round(len(records_with_articles) / len(records), 6)
+                if records
+                else 0.0
+            ),
+            "segment_count_per_document": _distribution(
+                [
+                    len(record["candidate_article_segments"])
+                    for record in records_with_articles
+                ]
+            ),
+            "character_length": _distribution(article_segment_lengths),
+            "character_length_thresholds": article_length_thresholds,
+            "prefix_character_length": {
+                "distribution": _distribution(prefix_lengths),
+                "empty_count": sum(length == 0 for length in prefix_lengths),
+                "non_empty_count": sum(length > 0 for length in prefix_lengths),
+            },
+            "outliers": {
+                "longest_segments": longest_article_segments,
+                "shortest_segments": shortest_article_segments,
+                "documents_with_most_segments": [
+                    _document_summary(record) for record in most_articles
+                ],
+                "longest_prefixes": [
+                    {
+                        "document_id": record["document_id"],
+                        "candidate_heading": record["candidate_article_segments"][0][
+                            "candidate_heading"
+                        ],
+                        "character_length": record["prefix_character_length"],
+                    }
+                    for record in longest_prefixes
+                ],
+            },
+        },
+        "documents_without_candidate_articles": {
+            "document_count": len(records_without_articles),
+            "document_fraction": (
+                round(len(records_without_articles) / len(records), 6)
+                if records
+                else 0.0
+            ),
+            "character_length": _distribution(
+                [record["character_length"] for record in records_without_articles]
+            ),
+            "line_count": _distribution(
+                [record["line_count"] for record in records_without_articles]
+            ),
+            "character_length_thresholds": no_article_length_thresholds,
+            "longest_documents": [
+                _document_summary(record) for record in without_articles
+            ],
         },
         "formatting_examples": {
             f"{name}_examples": examples
