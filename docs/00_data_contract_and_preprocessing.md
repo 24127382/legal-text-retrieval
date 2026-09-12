@@ -83,7 +83,7 @@ report = audit_all(data_root="data", split_filename="train.json")
 save_report(report, "data_audit.json")
 ```
 
-`src/data/schemas.py` giữ representation raw và phân biệt field missing, JSON `null`, chuỗi rỗng và list rỗng. `src/data/loaders.py` đọc JSON directory theo thứ tự tên deterministic; ZIP vẫn được hỗ trợ trực tiếp cho competition download chưa giải nén. Loader không normalize, parse, chunk hoặc silently drop record. `src/data/audit.py` tạo JSON-serializable report schema version 2, fingerprint dataset/corpus của từng task, so sánh hai corpus snapshot thay vì mặc định chúng giống nhau, và chỉ reuse corpus audit khi directory fingerprints khớp chính xác.
+`src/data/schemas.py` giữ representation raw và phân biệt field missing, JSON `null`, chuỗi rỗng và list rỗng. `src/data/loaders.py` đọc JSON file hoặc directory theo thứ tự tên deterministic; competition download cần được giải nén trước khi load. Loader không normalize, parse, chunk hoặc silently drop record. `src/data/audit.py` tạo JSON-serializable report schema version 2, fingerprint dataset/corpus của từng task, so sánh hai corpus snapshot thay vì mặc định chúng giống nhau, và chỉ reuse corpus audit khi directory fingerprints khớp chính xác.
 
 Unit tests và full-snapshot smoke test hiện pass, nhưng đây là validation của code path trên snapshot local, không phải artifact đủ để promotion toàn bộ data/corpus layer thành `Validated`.
 

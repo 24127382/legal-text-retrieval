@@ -1,7 +1,6 @@
 import json
 import tempfile
 import unittest
-import zipfile
 from pathlib import Path
 
 from src.data import (
@@ -42,22 +41,15 @@ class RawDataTests(unittest.TestCase):
         self.assertEqual(legal_qa, qa_source)
         self.assertNotIn("answer", legal_ir["102"])
 
-    def test_corpus_loads_directory_and_zip_without_changing_text(self) -> None:
+    def test_corpus_loads_directory_without_changing_text(self) -> None:
         corpus_path = self.root / "contexts"
         corpus_path.mkdir()
         document = {"id": 7, "passage": "  Passage\n", "link": "source"}
-        other_document = {"id": 8, "passage": "Other", "link": "source"}
         (corpus_path / "context_7.json").write_text(
             json.dumps(document), encoding="utf-8"
         )
 
-        archive_path = self.root / "contexts.zip"
-        with zipfile.ZipFile(archive_path, "w") as archive:
-            archive.writestr("context_8.json", json.dumps(other_document))
-            archive.writestr("context_7.json", json.dumps(document))
-
         self.assertEqual(load_corpus(corpus_path), [document])
-        self.assertEqual(load_corpus(archive_path), [document, other_document])
 
     def test_ir_and_corpus_audits_report_core_anomalies(self) -> None:
         corpus = [

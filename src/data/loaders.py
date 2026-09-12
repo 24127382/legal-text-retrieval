@@ -1,7 +1,6 @@
 """Small loaders for the raw competition JSON files."""
 
 import json
-import zipfile
 from pathlib import Path
 
 
@@ -51,36 +50,8 @@ def _corpus_documents(data, source: str) -> list[dict]:
     return documents
 
 
-def _load_corpus_zip(path: Path) -> list[dict]:
-    documents = []
-    try:
-        with zipfile.ZipFile(path) as archive:
-            members = sorted(
-                (
-                    member
-                    for member in archive.infolist()
-                    if not member.is_dir()
-                    and member.filename.lower().endswith(".json")
-                ),
-                key=lambda member: member.filename,
-            )
-            if not members:
-                raise ValueError(f"{path}: ZIP contains no JSON files")
-
-            for member in members:
-                source = f"{path}!{member.filename}"
-                try:
-                    data = json.loads(archive.read(member).decode("utf-8-sig"))
-                except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-                    raise ValueError(f"{source}: invalid JSON: {exc}") from exc
-                documents.extend(_corpus_documents(data, source))
-    except zipfile.BadZipFile as exc:
-        raise ValueError(f"{path}: invalid ZIP archive: {exc}") from exc
-    return documents
-
-
 def load_corpus(path: str | Path) -> list[dict]:
-    """Load corpus documents from a JSON file, directory, or ZIP archive."""
+    """Load corpus documents from a JSON file or directory."""
 
     input_path = Path(path)
     if input_path.is_dir():
@@ -99,8 +70,6 @@ def load_corpus(path: str | Path) -> list[dict]:
 
     if not input_path.is_file():
         raise FileNotFoundError(f"Input path does not exist: {input_path}")
-    if input_path.suffix.lower() == ".zip":
-        return _load_corpus_zip(input_path)
     if input_path.suffix.lower() == ".json":
         return _corpus_documents(_read_json(input_path), str(input_path))
-    raise ValueError(f"{input_path}: expected a JSON file, directory, or ZIP archive")
+    raise ValueError(f"{input_path}: expected a JSON file or directory")
