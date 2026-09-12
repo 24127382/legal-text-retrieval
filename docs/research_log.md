@@ -6,7 +6,7 @@ Append một entry khi có result mới, một hypothesis được hỗ trợ/b�
 
 Các thống kê dữ liệu dưới đây là aggregate observations từ local snapshot ngày 2026-09-12. Raw data nằm ngoài Git; commit ghi trong entry xác định code/decision context, không định danh nội dung snapshot.
 
-## D00 — Raw data understanding / audit
+## Raw data understanding / audit
 
 **Date / commit:** 2026-09-12 / `0e49c28`–`a271c35`; re-checked at `f3aa48b`
 
@@ -40,7 +40,7 @@ Giữ raw loaders source-preserving: data layer trả về nội dung nguồn, k
 
 Khi freeze dữ liệu cho experiment, lưu manifest/fingerprint và aggregate audit artifact; audit riêng rule/permission và evidence granularity trước mọi cross-task label transfer.
 
-## C00 — Corpus structure analysis
+## Corpus structure analysis
 
 **Date / commit:** 2026-09-12 / `a271c35`; re-checked at `f3aa48b`
 
@@ -73,7 +73,7 @@ Chưa implement article parser/chunker từ C00. Phân tích candidate article s
 
 Đo segment count/length, prefix trước candidate đầu tiên, nhóm không có candidate `Điều`, và inspect representative outliers.
 
-## C01 — Candidate article segment analysis
+## Candidate article segment analysis
 
 **Date / commit:** 2026-09-12 / `f3aa48b`
 
@@ -107,7 +107,7 @@ Không dùng candidate article segmentation hiện tại làm C0. Giữ signal n
 
 Chọn một C0 deterministic, model-independent và full-coverage; sau đó dùng fixed retrieval stack để đo riêng causal effect của article/structure-aware alternatives.
 
-## C02 — C0 corpus representation decision
+## Corpus representation decision
 
 **Date / commit:** 2026-09-12 / working-tree decision at `f3aa48b`
 
@@ -147,7 +147,7 @@ Structure-aware/article-aware chunking không bị loại bỏ; nó được gi�
 
 Implement C0, sau đó xây B0 BM25 và đo candidate/document Recall@K trước khi tối ưu reranking. Chỉ sau baseline này mới so sánh alternative corpus representations bằng controlled experiments.
 
-## C03 — C0 fixed-window implementation
+## Fixed-window implementation
 
 **Date / commit:** 2026-09-13 / `57c49e1`
 
@@ -186,7 +186,7 @@ C0 cung cấp retrieval-unit baseline deterministic, model-independent, không p
 
 Freeze cấu hình này cho experiment B0 đầu tiên. Không thay chunking trong khi đánh giá BM25. Structure-aware chunking là corpus-representation experiment riêng sau khi B0 có benchmark.
 
-## B00 — BM25 lexical baseline on C0
+## BM25 lexical baseline
 
 **Date / commit:** 2026-09-13 / working-tree benchmark after `57c49e1`
 
@@ -240,7 +240,7 @@ Gap giữa official-style top-5 recall 0,7616 và candidate Recall@100/200 lần
 
 Giữ B00 làm lexical reference trên C0. Trước hyperparameter optimization, tạo fixed validation split; trước khi chọn dense/hybrid hay reranker, inspect zero-recall và deep-rank samples để tách coverage failure khỏi ranking failure. Không tự động chuyển sang dense/hybrid và không thay C0 từ result này.
 
-## S00 — Fixed LegalIR train/dev/holdout split
+## Fixed LegalIR train/dev/holdout split
 
 **Date / source state:** 2026-09-13 / working tree after `1fcc0c7`
 
@@ -289,7 +289,7 @@ Drift quan sát được nhỏ; split không được search hay điều chỉnh
 
 Freeze `legalir_split_v1`. Train dành cho supervised/domain-adaptation experiments; dev dành cho error inspection, hyperparameter tuning và method selection; holdout chỉ dành cho aggregate local held-out evaluation, không phải competition test set và không được inspect theo sample trong lúc phát triển method.
 
-## B00-V — BM25 reference on fixed split
+## BM25 reference on fixed split
 
 **Date / source state:** 2026-09-13 / working-tree run after `1fcc0c7`
 
