@@ -1,309 +1,213 @@
-"""Read-only diagnostics for raw LegalIR, LegalQA, and corpus snapshots."""
+"""Useful, read-only diagnostics for raw LegalIR, LegalQA, and corpus data."""
 
-from __future__ import annotations
-
-import hashlib
-import json
-import math
 from collections import Counter, defaultdict
-from pathlib import Path
-from typing import Any, Iterable, Sequence
 
-from .loaders import load_corpus, load_legal_ir, load_legal_qa
-from .schemas import MISSING, CorpusDocument, LegalIRSample, LegalQASample
+import numpy as np
 
 
-def _sha256_file(path: Path) -> tuple[str, int]:
-    digest = hashlib.sha256()
-    size = 0
-    with path.open("rb") as stream:
-        while chunk := stream.read(1024 * 1024):
-            digest.update(chunk)
-            size += len(chunk)
-    return digest.hexdigest(), size
+def _length_statistics(texts: list[str]) -> dict:
+    if not texts:
+        return {"min": None, "median": None, "mean": None, "p95": None, "max": None}
 
-
-def fingerprint_path(path: str | Path) -> dict[str, Any]:
-    """Fingerprint a file or a deterministic snapshot of a directory."""
-
-    input_path = Path(path)
-    if input_path.is_file():
-        digest, size = _sha256_file(input_path)
-        return {
-            "kind": "file",
-            "path": str(input_path),
-            "size_bytes": size,
-            "sha256": digest,
-        }
-    if input_path.is_dir():
-        digest = hashlib.sha256()
-        files = sorted(candidate for candidate in input_path.rglob("*") if candidate.is_file())
-        total_size = 0
-        for file_path in files:
-            relative = file_path.relative_to(input_path).as_posix()
-            file_digest, size = _sha256_file(file_path)
-            total_size += size
-            digest.update(relative.encode("utf-8"))
-            digest.update(b"\0")
-            digest.update(str(size).encode("ascii"))
-            digest.update(b"\0")
-            digest.update(file_digest.encode("ascii"))
-            digest.update(b"\n")
-        return {
-            "kind": "directory",
-            "path": str(input_path),
-            "file_count": len(files),
-            "size_bytes": total_size,
-            "sha256": digest.hexdigest(),
-        }
-    raise FileNotFoundError(f"Cannot fingerprint missing path: {input_path}")
-
-
-def _percentile(sorted_values: Sequence[int], probability: float) -> float | int | None:
-    if not sorted_values:
-        return None
-    if len(sorted_values) == 1:
-        return sorted_values[0]
-    position = (len(sorted_values) - 1) * probability
-    lower = math.floor(position)
-    upper = math.ceil(position)
-    if lower == upper:
-        return sorted_values[lower]
-    weight = position - lower
-    result = sorted_values[lower] + (sorted_values[upper] - sorted_values[lower]) * weight
-    return int(result) if result.is_integer() else round(result, 10)
-
-
-def _length_statistics(values: Iterable[str]) -> dict[str, Any]:
-    lengths = sorted(len(value) for value in values)
-    count = len(lengths)
+    lengths = np.array([len(text) for text in texts])
     return {
-        "unit": "Python Unicode code points (len)",
-        "p95_method": "linear interpolation at (n - 1) * 0.95",
-        "count": count,
-        "min": lengths[0] if lengths else None,
-        "median": _percentile(lengths, 0.5),
-        "mean": (sum(lengths) / count) if count else None,
-        "p95": _percentile(lengths, 0.95),
-        "max": lengths[-1] if lengths else None,
+        "min": int(lengths.min()),
+        "median": float(np.median(lengths)),
+        "mean": float(lengths.mean()),
+        "p95": float(np.percentile(lengths, 95)),
+        "max": int(lengths.max()),
     }
 
 
-def _duplicate_ids(values: Iterable[str]) -> list[dict[str, Any]]:
-    counts = Counter(values)
-    return [
-        {"sample_id": sample_id, "count": count}
-        for sample_id, count in sorted(counts.items())
-        if count > 1
-    ]
-
-
-def _question_groups(
-    samples: Sequence[LegalIRSample | LegalQASample],
-) -> dict[str, list[str]]:
-    groups: dict[str, list[str]] = defaultdict(list)
-    for sample in samples:
-        if isinstance(sample.question, str) and sample.question != "":
-            groups[sample.question].append(sample.sample_id)
+def _question_groups(samples: dict) -> dict[str, list[str]]:
+    groups = defaultdict(list)
+    for sample_id, sample in samples.items():
+        question = sample.get("question")
+        if isinstance(question, str) and question != "":
+            groups[question].append(sample_id)
     return groups
 
 
-def _duplicate_question_groups(
-    samples: Sequence[LegalIRSample | LegalQASample],
-) -> list[dict[str, Any]]:
-    groups = _question_groups(samples)
-    result = []
-    for question, sample_ids in groups.items():
-        if len(sample_ids) > 1:
-            result.append(
-                {
-                    "sha256": hashlib.sha256(question.encode("utf-8")).hexdigest(),
-                    "question": question,
-                    "count": len(sample_ids),
-                    "sample_ids": sample_ids,
-                }
-            )
-    return sorted(result, key=lambda group: (group["sha256"], group["sample_ids"]))
-
-
-def _audit_dataset(
-    samples: Sequence[LegalIRSample | LegalQASample],
-) -> dict[str, Any]:
-    sample_ids = [sample.sample_id for sample in samples]
-    string_questions = [
-        sample.question for sample in samples if isinstance(sample.question, str)
+def _question_audit(samples: dict) -> dict:
+    questions = [
+        sample["question"]
+        for sample in samples.values()
+        if isinstance(sample.get("question"), str)
     ]
-    duplicate_questions = _duplicate_question_groups(samples)
     return {
         "sample_count": len(samples),
-        "unique_sample_id_count": len(set(sample_ids)),
-        "duplicate_sample_ids": _duplicate_ids(sample_ids),
-        "missing_question_count": sum(sample.question is MISSING for sample in samples),
-        "null_question_count": sum(sample.question is None for sample in samples),
-        "empty_question_count": sum(sample.question == "" for sample in samples),
-        "question_character_length": _length_statistics(string_questions),
-        "exact_duplicate_non_empty_question_group_count": len(duplicate_questions),
-        "exact_duplicate_non_empty_question_groups": duplicate_questions,
+        "missing_question_count": sum(
+            "question" not in sample for sample in samples.values()
+        ),
+        "null_question_count": sum(
+            sample.get("question") is None and "question" in sample
+            for sample in samples.values()
+        ),
+        "empty_question_count": sum(
+            sample.get("question") == "" for sample in samples.values()
+        ),
+        "question_character_length": _length_statistics(questions),
     }
 
 
-def audit_legal_ir(
-    samples: Sequence[LegalIRSample],
-    corpus: Sequence[CorpusDocument] | None = None,
-) -> dict[str, Any]:
-    """Audit LegalIR records and optionally resolve gold IDs against a corpus."""
+def audit_legal_ir(samples: dict, corpus: list[dict] | None = None) -> dict:
+    """Report LegalIR question, gold-label, and optional corpus-resolution issues."""
 
-    gold_lists = [sample.answer for sample in samples if isinstance(sample.answer, list)]
-    length_distribution = Counter(len(answer) for answer in gold_lists)
+    report = _question_audit(samples)
+    gold_lists = [
+        sample["answer"]
+        for sample in samples.values()
+        if isinstance(sample.get("answer"), list)
+    ]
+    unique_gold_ids = {document_id for answer in gold_lists for document_id in answer}
+
     duplicate_gold_ids = []
-    unique_gold_ids: set[str] = set()
-    for sample in samples:
-        if not isinstance(sample.answer, list):
+    for sample_id, sample in samples.items():
+        answer = sample.get("answer")
+        if not isinstance(answer, list):
             continue
-        unique_gold_ids.update(sample.answer)
-        duplicates = {
-            document_id: count
-            for document_id, count in sorted(Counter(sample.answer).items())
+        duplicates = [
+            document_id
+            for document_id, count in Counter(answer).items()
             if count > 1
-        }
+        ]
         if duplicates:
             duplicate_gold_ids.append(
-                {"sample_id": sample.sample_id, "duplicate_document_ids": duplicates}
+                {"sample_id": sample_id, "document_ids": duplicates}
             )
 
-    resolution: dict[str, Any]
-    if corpus is None:
-        resolution = {
-            "checked": False,
-            "match_policy": "gold string == decimal corpus integer rendered with str",
-            "unresolved_unique_document_id_count": None,
-            "unresolved_document_ids": None,
-            "samples_with_unresolved_gold": None,
-        }
-    else:
-        corpus_ids = {str(document.id) for document in corpus}
-        unresolved_ids = sorted(unique_gold_ids - corpus_ids)
-        affected = []
-        for sample in samples:
-            if isinstance(sample.answer, list):
-                unresolved_for_sample = sorted(set(sample.answer) - corpus_ids)
-                if unresolved_for_sample:
-                    affected.append(
-                        {
-                            "sample_id": sample.sample_id,
-                            "unresolved_document_ids": unresolved_for_sample,
-                        }
-                    )
-        resolution = {
-            "checked": True,
-            "match_policy": "gold string == decimal corpus integer rendered with str",
-            "unresolved_unique_document_id_count": len(unresolved_ids),
-            "unresolved_document_ids": unresolved_ids,
-            "samples_with_unresolved_gold": affected,
-        }
-
-    return {
-        "dataset": _audit_dataset(samples),
-        "gold": {
-            "missing_answer_count": sum(sample.answer is MISSING for sample in samples),
-            "null_answer_count": sum(sample.answer is None for sample in samples),
-            "gold_document_count_distribution": {
-                str(length): count for length, count in sorted(length_distribution.items())
-            },
-            "empty_gold_list_count": sum(answer == [] for answer in gold_lists),
-            "duplicate_document_ids_within_gold_lists": duplicate_gold_ids,
+    report.update(
+        {
+            "missing_answer_count": sum(
+                "answer" not in sample for sample in samples.values()
+            ),
+            "null_answer_count": sum(
+                sample.get("answer") is None and "answer" in sample
+                for sample in samples.values()
+            ),
+            "gold_document_count_distribution": dict(
+                sorted(Counter(len(answer) for answer in gold_lists).items())
+            ),
             "unique_gold_document_id_count": len(unique_gold_ids),
-            "corpus_resolution": resolution,
-        },
-    }
+            "unique_gold_document_ids": sorted(unique_gold_ids),
+            "duplicate_gold_ids_within_samples": duplicate_gold_ids,
+        }
+    )
+
+    if corpus is not None:
+        corpus_ids = {str(document.get("id")) for document in corpus if "id" in document}
+        unresolved_ids = sorted(
+            document_id
+            for document_id in unique_gold_ids
+            if str(document_id) not in corpus_ids
+        )
+        report["unresolved_gold_id_count"] = len(unresolved_ids)
+        report["unresolved_gold_ids"] = unresolved_ids
+
+    return report
 
 
-def audit_legal_qa(samples: Sequence[LegalQASample]) -> dict[str, Any]:
-    """Audit LegalQA records without changing answer text."""
+def audit_legal_qa(samples: dict) -> dict:
+    """Report LegalQA question and answer completeness and text lengths."""
 
-    string_answers = [sample.answer for sample in samples if isinstance(sample.answer, str)]
-    return {
-        "dataset": _audit_dataset(samples),
-        "answers": {
-            "missing_answer_count": sum(sample.answer is MISSING for sample in samples),
-            "null_answer_count": sum(sample.answer is None for sample in samples),
-            "empty_answer_count": sum(sample.answer == "" for sample in samples),
-            "answer_character_length": _length_statistics(string_answers),
-        },
-    }
+    report = _question_audit(samples)
+    answers = [
+        sample["answer"]
+        for sample in samples.values()
+        if isinstance(sample.get("answer"), str)
+    ]
+    report.update(
+        {
+            "missing_answer_count": sum(
+                "answer" not in sample for sample in samples.values()
+            ),
+            "null_answer_count": sum(
+                sample.get("answer") is None and "answer" in sample
+                for sample in samples.values()
+            ),
+            "empty_answer_count": sum(
+                sample.get("answer") == "" for sample in samples.values()
+            ),
+            "answer_character_length": _length_statistics(answers),
+        }
+    )
+    return report
 
 
-def audit_corpus(documents: Sequence[CorpusDocument]) -> dict[str, Any]:
-    """Audit raw corpus records, including empty passages rather than dropping them."""
+def audit_corpus(documents: list[dict]) -> dict:
+    """Report corpus identifiers, missing fields, and passage statistics."""
 
-    id_counts = Counter(document.id for document in documents)
-    duplicate_document_ids = [
+    document_ids = [document["id"] for document in documents if "id" in document]
+    id_counts = Counter(document_ids)
+    duplicate_ids = [
         {"document_id": document_id, "count": count}
-        for document_id, count in sorted(id_counts.items())
+        for document_id, count in id_counts.items()
         if count > 1
     ]
 
-    passage_groups: dict[str, list[int]] = defaultdict(list)
-    string_passages = []
+    passages = [
+        document["passage"]
+        for document in documents
+        if isinstance(document.get("passage"), str)
+    ]
+    passage_groups = defaultdict(list)
     for document in documents:
-        if isinstance(document.passage, str):
-            string_passages.append(document.passage)
-            if document.passage != "":
-                passage_groups[document.passage].append(document.id)
+        passage = document.get("passage")
+        if isinstance(passage, str) and passage != "":
+            passage_groups[passage].append(document.get("id"))
 
-    duplicate_passages = []
-    for passage, document_ids in passage_groups.items():
-        if len(document_ids) > 1:
-            duplicate_passages.append(
-                {
-                    "sha256": hashlib.sha256(passage.encode("utf-8")).hexdigest(),
-                    "character_length": len(passage),
-                    "count": len(document_ids),
-                    "document_ids": sorted(document_ids),
-                }
-            )
+    duplicate_passages = [
+        {
+            "document_ids": ids,
+            "count": len(ids),
+            "character_length": len(passage),
+        }
+        for passage, ids in passage_groups.items()
+        if len(ids) > 1
+    ]
 
     return {
         "document_count": len(documents),
+        "missing_document_id_count": sum("id" not in document for document in documents),
         "unique_document_id_count": len(id_counts),
-        "duplicate_document_ids": duplicate_document_ids,
-        "missing_passage_count": sum(document.passage is MISSING for document in documents),
-        "null_passage_count": sum(document.passage is None for document in documents),
-        "empty_passage_count": sum(document.passage == "" for document in documents),
-        "missing_name_count": sum(document.name is MISSING for document in documents),
-        "null_name_count": sum(document.name is None for document in documents),
-        "empty_name_count": sum(document.name == "" for document in documents),
-        "passage_character_length": _length_statistics(string_passages),
-        "exact_duplicate_non_empty_passage_group_count": len(duplicate_passages),
-        "exact_duplicate_non_empty_passage_groups": sorted(
-            duplicate_passages, key=lambda group: (group["sha256"], group["document_ids"])
+        "duplicate_document_ids": duplicate_ids,
+        "missing_passage_count": sum(
+            "passage" not in document for document in documents
         ),
+        "null_passage_count": sum(
+            document.get("passage") is None and "passage" in document
+            for document in documents
+        ),
+        "empty_passage_count": sum(
+            document.get("passage") == "" for document in documents
+        ),
+        "missing_name_count": sum("name" not in document for document in documents),
+        "null_name_count": sum(
+            document.get("name") is None and "name" in document
+            for document in documents
+        ),
+        "empty_name_count": sum(document.get("name") == "" for document in documents),
+        "passage_character_length": _length_statistics(passages),
+        "exact_duplicate_non_empty_passage_group_count": len(duplicate_passages),
+        "exact_duplicate_non_empty_passage_groups": duplicate_passages,
     }
 
 
-def audit_cross_task(
-    legal_ir: Sequence[LegalIRSample],
-    legal_qa: Sequence[LegalQASample],
-) -> dict[str, Any]:
-    """Report structural overlaps without treating them as semantic pairings."""
+def audit_cross_task(legal_ir: dict, legal_qa: dict) -> dict:
+    """Report exact overlaps; exact text does not prove a semantic pairing."""
 
-    shared_sample_ids = sorted(
-        {sample.sample_id for sample in legal_ir}
-        & {sample.sample_id for sample in legal_qa}
-    )
+    shared_sample_ids = sorted(set(legal_ir) & set(legal_qa))
     ir_questions = _question_groups(legal_ir)
     qa_questions = _question_groups(legal_qa)
-    shared_questions = set(ir_questions) & set(qa_questions)
+    shared_questions = sorted(set(ir_questions) & set(qa_questions))
 
-    cardinality_counts = Counter(
-        {
-            "one_to_one": 0,
-            "one_to_many": 0,
-            "many_to_one": 0,
-            "many_to_many": 0,
-        }
-    )
-    groups = []
+    cardinality_counts = {
+        "one_to_one": 0,
+        "one_to_many": 0,
+        "many_to_one": 0,
+        "many_to_many": 0,
+    }
+    question_groups = []
     for question in shared_questions:
         ir_ids = ir_questions[question]
         qa_ids = qa_questions[question]
@@ -315,10 +219,10 @@ def audit_cross_task(
             cardinality = "many_to_one"
         else:
             cardinality = "many_to_many"
+
         cardinality_counts[cardinality] += 1
-        groups.append(
+        question_groups.append(
             {
-                "sha256": hashlib.sha256(question.encode("utf-8")).hexdigest(),
                 "question": question,
                 "cardinality": cardinality,
                 "legal_ir_sample_ids": ir_ids,
@@ -327,112 +231,9 @@ def audit_cross_task(
         )
 
     return {
-        "interpretation_warning": (
-            "Exact question equality is a structural observation, not evidence that "
-            "LegalIR and LegalQA samples are semantically paired."
-        ),
-        "sample_id_overlap": {
-            "count": len(shared_sample_ids),
-            "sample_ids": shared_sample_ids,
-        },
-        "exact_non_empty_question_text_overlap": {
-            "cardinality_direction": "LegalIR:LegalQA",
-            "unique_shared_question_count": len(shared_questions),
-            "legal_ir_sample_occurrence_count": sum(
-                len(ir_questions[question]) for question in shared_questions
-            ),
-            "legal_qa_sample_occurrence_count": sum(
-                len(qa_questions[question]) for question in shared_questions
-            ),
-            "cardinality_counts": dict(cardinality_counts),
-            "groups": sorted(groups, key=lambda group: group["sha256"]),
-        },
+        "sample_id_overlap_count": len(shared_sample_ids),
+        "sample_id_overlap": shared_sample_ids,
+        "exact_question_text_overlap_count": len(shared_questions),
+        "cardinality_counts": cardinality_counts,
+        "question_groups": question_groups,
     }
-
-
-def audit_all(
-    *,
-    data_root: str | Path,
-    split_filename: str = "train.json",
-) -> dict[str, Any]:
-    """Audit the current competition directory layout below ``data_root``.
-
-    Expected layout::
-
-        data_root/
-            LegalIR/{split_filename}
-            LegalIR/selected-contexts/*.json
-            LegalQA/{split_filename}
-            LegalQA/selected-contexts/*.json
-
-    The caller still controls the root path, so the same API works locally and
-    on Kaggle. Both corpus snapshots are fingerprinted instead of assuming they
-    are equal.
-    """
-
-    root = Path(data_root)
-    legal_ir_path = root / "LegalIR" / split_filename
-    legal_qa_path = root / "LegalQA" / split_filename
-    legal_ir_corpus_path = root / "LegalIR" / "selected-contexts"
-    legal_qa_corpus_path = root / "LegalQA" / "selected-contexts"
-
-    legal_ir = load_legal_ir(legal_ir_path)
-    legal_qa = load_legal_qa(legal_qa_path)
-    legal_ir_corpus_fingerprint = fingerprint_path(legal_ir_corpus_path)
-    legal_qa_corpus_fingerprint = fingerprint_path(legal_qa_corpus_path)
-    corpora_match = (
-        legal_ir_corpus_fingerprint["sha256"]
-        == legal_qa_corpus_fingerprint["sha256"]
-    )
-
-    legal_ir_corpus = load_corpus(legal_ir_corpus_path)
-    legal_ir_corpus_audit = audit_corpus(legal_ir_corpus)
-    legal_ir_audit = audit_legal_ir(legal_ir, legal_ir_corpus)
-
-    if corpora_match:
-        legal_qa_corpus_audit = legal_ir_corpus_audit
-    else:
-        legal_qa_corpus_audit = audit_corpus(load_corpus(legal_qa_corpus_path))
-
-    return {
-        "report_schema_version": 2,
-        "layout": {
-            "data_root": str(root),
-            "split_filename": split_filename,
-        },
-        "fingerprints": {
-            "legal_ir": {
-                "dataset": fingerprint_path(legal_ir_path),
-                "corpus": legal_ir_corpus_fingerprint,
-            },
-            "legal_qa": {
-                "dataset": fingerprint_path(legal_qa_path),
-                "corpus": legal_qa_corpus_fingerprint,
-            },
-        },
-        "corpora": {
-            "comparison": {
-                "exact_snapshot_match": corpora_match,
-                "basis": (
-                    "SHA-256 over sorted relative file paths, sizes, and file hashes"
-                ),
-                "legal_qa_audit_reused_from": (
-                    "legal_ir" if corpora_match else None
-                ),
-            },
-            "legal_ir": legal_ir_corpus_audit,
-            "legal_qa": legal_qa_corpus_audit,
-        },
-        "legal_ir": legal_ir_audit,
-        "legal_qa": audit_legal_qa(legal_qa),
-        "cross_task": audit_cross_task(legal_ir, legal_qa),
-    }
-
-
-def save_report(report: dict[str, Any], path: str | Path) -> None:
-    """Serialize an audit report as readable UTF-8 JSON."""
-
-    output_path = Path(path)
-    with output_path.open("w", encoding="utf-8", newline="\n") as stream:
-        json.dump(report, stream, ensure_ascii=False, indent=2)
-        stream.write("\n")
