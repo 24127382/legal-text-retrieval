@@ -432,3 +432,92 @@ Giữ fixed-window BM25 run làm unchanged reference và freeze split v1. Patter
 - Existing aggregate holdout metrics ở entry trước thiết lập current reference. Future development iterations không repeatedly evaluate holdout.
 
 Entry này không ghi experimental result mới và không thay split assignment, retrieval configuration hoặc metric implementation.
+
+## Document aggregation comparison on fixed BM25 candidates
+
+**Date / source state:** 2026-09-13 / fixed DEV split and unchanged BM25 retrieval controls
+
+### Question
+
+Does document aggregation explain part of the gap between high candidate coverage and lower top-5 performance?
+
+### Fixed controls
+
+- Corpus representation: fixed-window character chunks, size 2.000 và overlap 200; 199.816 chunks từ toàn bộ 8.532 documents.
+- Retrieval: `bm25s==0.3.11`, `method="lucene"`, `k1=1.5`, `b=0.75`, lowercase Unicode `\w+` tokenizer và `top_k_chunks=2000`.
+- Data: cùng fixed DEV split gồm 1.036 queries; source SHA-256 khớp manifest (`c39cde9e74977e350f1456e7d487aafe67d2bcbaa4fa26fcabd557fe635635b7`).
+- Mỗi DEV query được retrieve đúng một lần. Cả bốn aggregation variants dùng cùng exact top-2.000 chunk-hit pool gồm `chunk_id`, `document_id`, BM25 score và chunk rank.
+- Candidate universe của mỗi query là toàn bộ unique document IDs trong shared chunk-hit pool; không prefilter bằng max score. Sau aggregation mới lấy prefix tại requested document depth.
+- Tie-break chung: aggregate score giảm dần, sau đó best chunk rank tăng dần, rồi canonical string `document_id` tăng dần.
+
+### Aggregation variants
+
+- Max chunk score.
+- Mean top-2 chunk scores; document có một hit dùng score đó.
+- Mean top-3 chunk scores; document có ít hơn ba hits dùng mean trên số hits hiện có.
+- Sum top-2 chunk scores; document có một hit dùng score đó.
+
+### Results
+
+Candidate Recall@K và MRR dùng document-ranking prefix đến depth 200 như current reference; candidate-pool recall và first-gold `not found` dùng complete shared candidate universe.
+
+| Aggregation | Recall@10 | Recall@20 | Recall@50 | Recall@100 | Recall@200 | MRR | Top-5 precision | Top-5 recall |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Max chunk score | 0,836631 | 0,902751 | 0,935489 | 0,953427 | 0,974743 | 0,623351 | 0,162355 | 0,761503 |
+| Mean top-2 | 0,863819 | 0,909508 | 0,936454 | 0,956966 | 0,973456 | 0,631326 | 0,166216 | 0,778394 |
+| Mean top-3 | 0,848858 | 0,899533 | 0,933237 | 0,956001 | 0,970721 | 0,626459 | 0,164672 | 0,770672 |
+| Sum top-2 | 0,864302 | 0,907336 | 0,938867 | 0,957368 | 0,972651 | 0,634224 | 0,167761 | 0,786599 |
+
+Delta trực tiếp so với max chunk score:
+
+| Aggregation | Δ Recall@10 | Δ Recall@20 | Δ Recall@50 | Δ MRR | Δ top-5 precision | Δ top-5 recall |
+|---|---:|---:|---:|---:|---:|---:|
+| Mean top-2 | +0,027188 | +0,006757 | +0,000965 | +0,007975 | +0,003861 | +0,016892 |
+| Mean top-3 | +0,012227 | -0,003218 | -0,002252 | +0,003108 | +0,002317 | +0,009170 |
+| Sum top-2 | +0,027671 | +0,004585 | +0,003378 | +0,010873 | +0,005405 | +0,025097 |
+
+Zero/full-recall diagnostics:
+
+| Aggregation | Zero @100 | Full @100 | Zero @200 | Full @200 |
+|---|---:|---:|---:|---:|
+| Max chunk score | 0,036680 | 0,943050 | 0,018340 | 0,967181 |
+| Mean top-2 | 0,031853 | 0,945946 | 0,019305 | 0,966216 |
+| Mean top-3 | 0,033784 | 0,945946 | 0,021236 | 0,962355 |
+| Sum top-2 | 0,032819 | 0,946911 | 0,020270 | 0,964286 |
+
+Candidate-pool recall, measured over every unique document in the shared top-2.000 chunk pool, là 0,986326 cho mọi variant; zero-recall rate là 0,010618, full-recall rate là 0,982625, 1.025/1.036 queries có ít nhất một gold document và 11 queries không có gold document trong pool. Implementation check xác nhận candidate universe giống nhau cho cả bốn methods trên 1.036/1.036 queries.
+
+Candidate-pool sufficiency: số unique documents/query có minimum 143, median 674,5 và p95 984. Không query nào dưới depth 10/20/50/100; 2 queries dưới depth 200 và được tính bằng toàn bộ available prefix theo evaluation protocol.
+
+Per-query official-style top-5 comparison với max chunk score:
+
+| Aggregation | Precision improved / unchanged / worsened | Recall improved / unchanged / worsened |
+|---|---:|---:|
+| Mean top-2 | 40 / 976 / 20 | 40 / 976 / 20 |
+| Mean top-3 | 49 / 949 / 38 | 49 / 949 / 38 |
+| Sum top-2 | 48 / 969 / 19 | 48 / 969 / 19 |
+
+First-gold ranks được tính trên complete candidate universe, không coi document sau rank 200 là absent; median/p90/p95 được tính trên các query tìm thấy ít nhất một gold document:
+
+| Aggregation | Median | p90 | p95 | Rank 1 | Rank 2–5 | Rank 6–10 | Rank 11–20 | Rank 21–50 | Rank 51–100 | Rank 101–200 | Beyond 200 | Not found |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Max chunk score | 2 | 14 | 38 | 510 | 300 | 77 | 65 | 31 | 15 | 19 | 8 | 11 |
+| Mean top-2 | 1 | 11,6 | 37,4 | 514 | 316 | 85 | 44 | 24 | 20 | 13 | 9 | 11 |
+| Mean top-3 | 2 | 13 | 45,8 | 510 | 314 | 76 | 49 | 31 | 21 | 13 | 11 | 11 |
+| Sum top-2 | 1 | 11 | 39 | 515 | 323 | 78 | 40 | 29 | 17 | 13 | 10 | 11 |
+
+Supporting-chunk count trên mọi query-document candidate pair có median 1, p95 10 và max 407 retrieved chunks. Đây là pool-level diagnostic; không phải feature analysis hay learned signal.
+
+### Interpretation
+
+Rewarding multiple strong lexical chunks có ích trên DEV. Sum top-2 tăng đồng thời official-style top-5 precision (+0,005405), top-5 recall (+0,025097), MRR (+0,010873) và Recall@10/20/50 so với max-score, trong khi retrieval và candidate-pool recall giữ nguyên. Mean top-2 cũng tăng đồng thời top-5 precision/recall và MRR nhưng nhỏ hơn sum top-2. Mean top-3 tăng top-5 scores nhưng giảm Recall@20 và Recall@50, nên evidence kém ổn định hơn qua ranking depths.
+
+Mean aggregation không gây net loss trên top-5 aggregate metrics, nhưng có per-query regressions: 20 queries worsened với mean top-2 và 38 với mean top-3. Cùng với deeper-recall losses của mean top-3, kết quả phù hợp với rủi ro averaging làm giảm hạng document được nâng bởi một strong chunk; pool-level supporting-count diagnostic hiện tại chưa đủ để gán trực tiếp mỗi regression cho trường hợp đó.
+
+Improvement không trải trên đa số queries: sum top-2 thay đổi top-5 outcome ở 67/1.036 queries, gồm 48 improved và 19 worsened; 969 unchanged. Vì vậy gain có hướng nhất quán trên nhóm queries bị ảnh hưởng nhưng vẫn localized.
+
+Khoảng cách giữa fixed candidate-pool recall và top-5 recall giảm từ 0,224823 với max score xuống 0,199727 với sum top-2, tức giảm 0,025097 absolute (khoảng 11,16% của gap ban đầu) mà không thay retrieval coverage. Aggregation giải thích được một phần, không phải toàn bộ ranking gap.
+
+### Decision
+
+Sum top-2 có evidence DEV mạnh nhất trong comparison nhỏ này vì cải thiện đồng thời cả official-style precision và recall, đồng thời cải thiện MRR và Recall@10/20/50. Freeze sum top-2 làm document-ranking rule candidate trước khi có bất kỳ fixed local holdout evaluation nào. Task này không evaluate holdout và chưa chuyển sang dense retrieval, hybrid retrieval hay reranking.

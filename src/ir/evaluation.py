@@ -91,6 +91,167 @@ def evaluate_retrieval(
     }
 
 
+def evaluate_candidate_pool(samples: dict, candidate_rankings: dict) -> dict:
+    """Measure gold coverage over every document in each fixed chunk-hit pool."""
+
+    if not samples:
+        raise ValueError("samples must not be empty")
+
+    recall_values = []
+    for sample_id, sample in samples.items():
+        gold_values = sample.get("answer")
+        if not isinstance(gold_values, list) or not gold_values:
+            raise ValueError(f"sample {sample_id!r}: expected a non-empty answer list")
+        gold = {str(document_id) for document_id in gold_values}
+        candidates = [
+            str(document_id)
+            for document_id in candidate_rankings.get(str(sample_id), [])
+        ]
+        if len(candidates) != len(set(candidates)):
+            raise ValueError(
+                f"sample {sample_id!r}: candidate pool contains duplicate IDs"
+            )
+        recall_values.append(len(gold.intersection(candidates)) / len(gold))
+
+    number_of_queries = len(samples)
+    return {
+        "mean_recall": sum(recall_values) / number_of_queries,
+        "zero_recall_rate": sum(value == 0 for value in recall_values)
+        / number_of_queries,
+        "full_recall_rate": sum(value == 1 for value in recall_values)
+        / number_of_queries,
+        "queries_with_any_gold": sum(value > 0 for value in recall_values),
+        "queries_with_no_gold": sum(value == 0 for value in recall_values),
+    }
+
+
+def compare_official_style_top_5(
+    samples: dict,
+    reference_rankings: dict[str, list[str]],
+    alternative_rankings: dict[str, list[str]],
+) -> dict:
+    """Count per-query top-5 precision and recall changes from a reference."""
+
+    if not samples:
+        raise ValueError("samples must not be empty")
+
+    comparisons = {
+        "precision": Counter(),
+        "recall": Counter(),
+    }
+    for sample_id, sample in samples.items():
+        gold_values = sample.get("answer")
+        if not isinstance(gold_values, list) or not gold_values:
+            raise ValueError(f"sample {sample_id!r}: expected a non-empty answer list")
+        gold = {str(document_id) for document_id in gold_values}
+
+        scores = {}
+        for label, rankings in (
+            ("reference", reference_rankings),
+            ("alternative", alternative_rankings),
+        ):
+            top_5 = [
+                str(document_id) for document_id in rankings.get(str(sample_id), [])[:5]
+            ]
+            if len(top_5) != len(set(top_5)):
+                raise ValueError(
+                    f"sample {sample_id!r}: {label} ranking contains duplicate IDs"
+                )
+            overlap = len(gold.intersection(top_5))
+            scores[label] = {
+                "precision": overlap / len(top_5) if top_5 else 0.0,
+                "recall": overlap / len(gold),
+            }
+
+        for metric, metric_comparisons in comparisons.items():
+            difference = scores["alternative"][metric] - scores["reference"][metric]
+            label = (
+                "improved"
+                if difference > 0
+                else "worsened"
+                if difference < 0
+                else "unchanged"
+            )
+            metric_comparisons[label] += 1
+
+    return {
+        metric: {
+            label: comparisons[metric][label]
+            for label in ("improved", "unchanged", "worsened")
+        }
+        for metric in comparisons
+    }
+
+
+def summarize_first_gold_ranks(samples: dict, rankings: dict[str, list[str]]) -> dict:
+    """Summarize first-gold ranks over the complete candidate universe."""
+
+    if not samples:
+        raise ValueError("samples must not be empty")
+
+    first_gold_ranks = []
+    rank_bins = Counter()
+    for sample_id, sample in samples.items():
+        gold_values = sample.get("answer")
+        if not isinstance(gold_values, list) or not gold_values:
+            raise ValueError(f"sample {sample_id!r}: expected a non-empty answer list")
+        gold = {str(document_id) for document_id in gold_values}
+        ranked = [str(document_id) for document_id in rankings.get(str(sample_id), [])]
+        if len(ranked) != len(set(ranked)):
+            raise ValueError(f"sample {sample_id!r}: ranking contains duplicate IDs")
+
+        first_gold_rank = next(
+            (
+                rank
+                for rank, document_id in enumerate(ranked, start=1)
+                if document_id in gold
+            ),
+            None,
+        )
+        if first_gold_rank is None:
+            rank_bins["not_found"] += 1
+            continue
+
+        first_gold_ranks.append(first_gold_rank)
+        if first_gold_rank == 1:
+            rank_bins["1"] += 1
+        elif first_gold_rank <= 5:
+            rank_bins["2-5"] += 1
+        elif first_gold_rank <= 10:
+            rank_bins["6-10"] += 1
+        elif first_gold_rank <= 20:
+            rank_bins["11-20"] += 1
+        elif first_gold_rank <= 50:
+            rank_bins["21-50"] += 1
+        elif first_gold_rank <= 100:
+            rank_bins["51-100"] += 1
+        elif first_gold_rank <= 200:
+            rank_bins["101-200"] += 1
+        else:
+            rank_bins["beyond_200"] += 1
+
+    ordered_bin_labels = (
+        "1",
+        "2-5",
+        "6-10",
+        "11-20",
+        "21-50",
+        "51-100",
+        "101-200",
+        "beyond_200",
+        "not_found",
+    )
+    return {
+        "when_found": {
+            "median": float(median(first_gold_ranks)) if first_gold_ranks else None,
+            "p90": _percentile(first_gold_ranks, 90),
+            "p95": _percentile(first_gold_ranks, 95),
+            "max": max(first_gold_ranks, default=None),
+        },
+        "counts": {label: rank_bins[label] for label in ordered_bin_labels},
+    }
+
+
 def diagnose_dev_rankings(
     samples: dict, rankings: dict[str, list[str]], max_examples: int = 20
 ) -> dict:

@@ -1,6 +1,7 @@
 import unittest
 
 from src.ir import (
+    aggregate_documents,
     build_bm25,
     evaluate_retrieval,
     make_legalir_split,
@@ -9,6 +10,60 @@ from src.ir import (
 
 
 class BM25SanityTests(unittest.TestCase):
+    def test_document_aggregation_uses_one_candidate_universe(self) -> None:
+        chunk_hits = [
+            {
+                "chunk_id": "a:0",
+                "document_id": "a",
+                "score": 5.0,
+                "chunk_rank": 1,
+            },
+            {
+                "chunk_id": "b:0",
+                "document_id": "b",
+                "score": 4.0,
+                "chunk_rank": 2,
+            },
+            {
+                "chunk_id": "b:1",
+                "document_id": "b",
+                "score": 4.0,
+                "chunk_rank": 3,
+            },
+            {
+                "chunk_id": "a:1",
+                "document_id": "a",
+                "score": 1.0,
+                "chunk_rank": 4,
+            },
+            {
+                "chunk_id": "c:0",
+                "document_id": "c",
+                "score": 4.0,
+                "chunk_rank": 5,
+            },
+        ]
+
+        rankings = {
+            method: aggregate_documents(chunk_hits, method=method)
+            for method in ("max", "mean_top_2", "mean_top_3", "sum_top_2")
+        }
+        document_ids = {
+            method: [document["document_id"] for document in ranking]
+            for method, ranking in rankings.items()
+        }
+
+        self.assertEqual(document_ids["max"][:2], ["a", "b"])
+        self.assertEqual(document_ids["mean_top_2"][:2], ["b", "c"])
+        self.assertEqual(document_ids["mean_top_3"][:2], ["b", "c"])
+        self.assertEqual(document_ids["sum_top_2"][:2], ["b", "a"])
+        self.assertEqual(document_ids["mean_top_2"][1:], ["c", "a"])
+        self.assertEqual(
+            {method: set(ids) for method, ids in document_ids.items()},
+            {method: {"a", "b", "c"} for method in document_ids},
+        )
+        self.assertTrue(all(len(ids) == len(set(ids)) for ids in document_ids.values()))
+
     def test_split_groups_exact_questions_and_assigns_every_id_once(self) -> None:
         samples = {
             "a": {"question": "same"},
