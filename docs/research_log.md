@@ -521,3 +521,67 @@ Khoảng cách giữa fixed candidate-pool recall và top-5 recall giảm từ 0
 ### Decision
 
 Sum top-2 có evidence DEV mạnh nhất trong comparison nhỏ này vì cải thiện đồng thời cả official-style precision và recall, đồng thời cải thiện MRR và Recall@10/20/50. Freeze sum top-2 làm document-ranking rule candidate trước khi có bất kỳ fixed local holdout evaluation nào. Task này không evaluate holdout và chưa chuyển sang dense retrieval, hybrid retrieval hay reranking.
+
+## Official scorer validation and fixed-holdout check
+
+**Date / source state:** 2026-09-13 / commit `0260afa342f33cd1f083b9ce4fe8504f75638129`, fixed split và frozen document aggregation decision
+
+### Purpose
+
+- Verify local top-5 evaluation against `eval_retrieval` trong bundled LegalIR scorer tại `scoring/LegalIR/scoring.py`.
+- Quantify stability của DEV improvement dưới paired query resampling.
+- Evaluate aggregation đã freeze bằng DEV đúng một lần trên fixed local holdout ở aggregate level.
+
+### Official scorer validation
+
+Prediction adapter giữ nguyên sample IDs và tạo đúng object `{sample_id: {"answer": [...]}}`; mỗi answer chứa top 5 unique ranked document IDs, không threshold, adaptive K hay extra field. DEV run giữ nguyên 1.036 queries, full-corpus fixed-window representation và shared top-2.000 chunk-hit pool.
+
+| Aggregation | Bundled scorer precision | Local top-5 precision | Absolute difference | Bundled scorer recall | Local top-5 recall | Absolute difference |
+|---|---:|---:|---:|---:|---:|---:|
+| Max chunk score | 0,16235521235521233 | 0,16235521235521236 | 2,7755575615628914e-17 | 0,7615025740025740 | 0,7615025740025739 | 1,1102230246251565e-16 |
+| Sum top-2 | 0,16776061776061776 | 0,16776061776061776 | 0 | 0,7865990990990991 | 0,7865990990990991 | 0 |
+
+Mọi absolute difference đều nhỏ hơn `1e-12`; bundled scorer equivalence pass. Bundled scorer được load trực tiếp bằng `importlib` và gọi `eval_retrieval(prediction, truth)`; authoritative scorer không được sửa hoặc reimplement cho validation này.
+
+### DEV paired bootstrap
+
+Paired bootstrap resample cùng query indices cho max chunk score và sum top-2. Per-query contributions được lấy bằng direct singleton calls tới bundled scorer. Seed là `20260913`, số resamples là 10.000; rerun với cùng seed trả về đúng cùng summary.
+
+| Metric | Observed delta | Bootstrap mean delta | 95% percentile interval | Fraction delta > 0 |
+|---|---:|---:|---:|---:|
+| Precision | +0,005405405405405405 | +0,005419498069498070 | [0,002316602316602317; 0,008494208494208495] | 0,9998 |
+| Recall | +0,025096525096525095 | +0,025169015444015445 | [0,010939510939510939; 0,039736164736164730] | 0,9998 |
+
+Cả hai paired bootstrap 95% percentile intervals đều hoàn toàn lớn hơn 0. Improvement của frozen sum-top-2 aggregation có bootstrap stability trên DEV; diagnostic này không được dùng để search hoặc chọn thêm aggregation variant.
+
+### Fixed local holdout
+
+Holdout evaluation chỉ chạy sau khi scorer equivalence pass. Hai configurations dùng cùng 1.023 queries, 8.532-document corpus, 199.816 fixed character-window chunks với size 2.000/overlap 200, `bm25s==0.3.11`, `method="lucene"`, `k1=1.5`, `b=0.75`, lowercase Unicode `\w+`, `top_k_chunks=2000`, shared candidate universe và deterministic aggregation tie-break.
+
+**Bundled LegalIR scorer metrics**
+
+| Aggregation | Official scorer precision | Official scorer recall |
+|---|---:|---:|
+| Max chunk score | 0,1565982404692082 | 0,7442978168784621 |
+| Sum top-2 | 0,1640273704789834 | 0,7796513522319974 |
+
+Official scorer deltas của sum top-2 so với max chunk score: precision `+0,007429130009775187`; recall `+0,03535353535353536`.
+
+**Internal aggregate diagnostics**
+
+| Aggregation | Recall@10 | Recall@20 | Recall@50 | Recall@100 | Recall@200 | MRR |
+|---|---:|---:|---:|---:|---:|---:|
+| Max chunk score | 0,8380579993483219 | 0,8823721081785597 | 0,9297816878462040 | 0,9521831215379603 | 0,9700228087324861 | 0,5917688824236508 |
+| Sum top-2 | 0,8397686542847833 | 0,9002117953730857 | 0,9382535027696318 | 0,9565004887585533 | 0,9692082111436950 | 0,6217792191562832 |
+
+Internal deltas: Recall@10 `+0,001710654936461387`; Recall@20 `+0,017839687194526000`; Recall@50 `+0,008471814923427856`; Recall@100 `+0,004317367220593060`; Recall@200 `-0,000814597588791099`; MRR `+0,030010336732632426`. Recall@K với K lớn hơn 5 và MRR là internal diagnostics, không phải official scorer metrics.
+
+Candidate-pool recall trên complete shared candidate universe là `0,9850114043662430`; zero-recall rate `0,009775171065493646`, full-recall rate `0,9794721407624634`, 1.013/1.023 queries có ít nhất một gold document trong pool. Candidate-pool sufficiency: minimum 170, median 684, p95 978,8 unique documents/query; số queries dưới depth 10/20/50/100/200 lần lượt là 0/0/0/0/1. Candidate universe giống nhau cho cả hai aggregations trên toàn bộ holdout run.
+
+Fixed local holdout không phải pristine untouched test set. Sum top-2 đã được freeze trước evaluation này; không inspect sample-level holdout questions, IDs, failure examples hay wins/losses. Kết quả chỉ được record ở aggregate level và không được dùng để search variants trong task này.
+
+### Decision
+
+The DEV-selected sum-top-2 aggregation generalizes directionally on the fixed local holdout.
+
+Có thể giữ sum top-2 làm current fixed document aggregation reference cho các experiment tiếp theo. Decision này không mở lại aggregation search và không thay retrieval, chunking, tokenizer, BM25 controls hay split.

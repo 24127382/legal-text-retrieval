@@ -4,6 +4,32 @@ from collections import Counter
 from statistics import median
 
 
+def make_legalir_predictions(
+    rankings: dict[str, list[str]], top_k: int = 5
+) -> dict[str, dict[str, list[str]]]:
+    """Build the prediction object consumed by the bundled LegalIR scorer."""
+
+    if not isinstance(top_k, int) or isinstance(top_k, bool):
+        raise TypeError("top_k must be an integer")
+    if not 0 < top_k <= 5:
+        raise ValueError("top_k must be between one and five")
+
+    predictions = {}
+    for sample_id, ranked_document_ids in rankings.items():
+        unique_document_ids = []
+        seen_document_ids = set()
+        for document_id in ranked_document_ids:
+            canonical_id = str(document_id)
+            if canonical_id in seen_document_ids:
+                continue
+            seen_document_ids.add(canonical_id)
+            unique_document_ids.append(canonical_id)
+            if len(unique_document_ids) == top_k:
+                break
+        predictions[sample_id] = {"answer": unique_document_ids}
+    return predictions
+
+
 def _percentile(values: list[int], percent: int) -> float | None:
     if not values:
         return None

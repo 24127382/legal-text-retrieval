@@ -12,6 +12,7 @@ from .evaluation import (
     diagnose_dev_rankings,
     evaluate_candidate_pool,
     evaluate_retrieval,
+    make_legalir_predictions,
     summarize_first_gold_ranks,
 )
 from .split import make_legalir_split, select_samples
@@ -25,6 +26,7 @@ __all__ = [
     "evaluate_candidate_pool",
     "evaluate_retrieval",
     "lexical_tokenize",
+    "make_legalir_predictions",
     "make_legalir_split",
     "retrieve_bm25",
     "retrieve_bm25_aggregations",

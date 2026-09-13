@@ -1,9 +1,12 @@
+import importlib.util
 import unittest
+from pathlib import Path
 
 from src.ir import (
     aggregate_documents,
     build_bm25,
     evaluate_retrieval,
+    make_legalir_predictions,
     make_legalir_split,
     retrieve_bm25,
 )
@@ -126,6 +129,64 @@ class BM25SanityTests(unittest.TestCase):
         self.assertAlmostEqual(metrics["mrr"], (1 / 2 + 1 / 5) / 2)
         self.assertAlmostEqual(metrics["official_style_top_5"]["precision"], 0.3)
         self.assertEqual(metrics["official_style_top_5"]["recall"], 1.0)
+
+    def test_prediction_adapter_matches_bundled_scorer(self) -> None:
+        samples = {
+            "q1": {"question": "one", "answer": ["a", "b"]},
+            "q2": {"question": "two", "answer": ["z"]},
+        }
+        rankings = {
+            "q1": ["x", "a", "x", "y", "b", "w"],
+            "q2": ["a", "b", "c", "d", "z", "z"],
+        }
+
+        predictions = make_legalir_predictions(rankings)
+        self.assertEqual(
+            predictions,
+            {
+                "q1": {"answer": ["x", "a", "y", "b", "w"]},
+                "q2": {"answer": ["a", "b", "c", "d", "z"]},
+            },
+        )
+        self.assertTrue(
+            all(
+                set(prediction) == {"answer"}
+                and len(prediction["answer"]) <= 5
+                and len(prediction["answer"]) == len(set(prediction["answer"]))
+                for prediction in predictions.values()
+            )
+        )
+
+        scorer_path = (
+            Path(__file__).parents[1] / "scoring" / "LegalIR" / "scoring.py"
+        )
+        spec = importlib.util.spec_from_file_location(
+            "bundled_legalir_scorer", scorer_path
+        )
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+        scorer = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(scorer)
+
+        bundled_metrics = scorer.eval_retrieval(
+            predictions,
+            {sample_id: sample["answer"] for sample_id, sample in samples.items()},
+        )
+        submitted_rankings = {
+            sample_id: prediction["answer"]
+            for sample_id, prediction in predictions.items()
+        }
+        local_metrics = evaluate_retrieval(samples, submitted_rankings)[
+            "official_style_top_5"
+        ]
+        self.assertLess(
+            abs(float(bundled_metrics["precision"]) - local_metrics["precision"]),
+            1e-12,
+        )
+        self.assertLess(
+            abs(float(bundled_metrics["recall"]) - local_metrics["recall"]),
+            1e-12,
+        )
 
 
 if __name__ == "__main__":
