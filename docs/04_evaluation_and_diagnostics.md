@@ -95,6 +95,14 @@ Các diagnostics này là local research diagnostics theo [00 — Data contract 
 - fingerprint consistency giữa split dùng train/tune/evaluate và run artifact; không silently regenerate;
 - public leaderboard được report riêng, không được gọi là local validation hoặc thay local held-out evaluation.
 
+### Dev và fixed local holdout
+
+Dev là split duy nhất dùng cho method selection, error inspection và hyperparameter tuning. Không chạy holdout trong mỗi development iteration. Chỉ evaluate holdout sau khi method/configuration đã được chọn hoàn toàn bằng dev và configuration đã freeze, với mục đích lấy một aggregate local held-out estimate.
+
+Không inspect individual holdout samples, không liệt kê holdout failure IDs, không xem holdout errors rồi thay method, không dùng holdout score để chọn hyperparameter, và không chạy nhiều alternatives trên holdout rồi chọn best.
+
+Holdout hiện tại phải được gọi là **fixed local holdout**, không phải pristine untouched, independent hoặc final test set. Trước khi split được freeze, project đã chạy một full-7.000-query zero-shot BM25 diagnostic và inspect một số aggregate/failure information. Split vẫn hữu ích để kiểm tra relative generalization và chưa có tuning trực tiếp trên holdout IDs; tuy nhiên, theo strict experimental design, prior full-dataset diagnostics khiến holdout không pristine. Một future untouched test set chỉ có thể mang nghĩa đó nếu được tạo và khóa trước mọi inspection.
+
 **Parsing**
 
 - parse success/failure rate và failure reasons; số record bị fallback hoặc skipped;
@@ -139,13 +147,17 @@ Corpus không được gọi `Validated` nếu D06a còn silent document loss, s
 
 ### Candidate document recall
 
-Với gold set `G_q` và top-K candidate documents đã deduplicate `C_q^K`:
+Với gold set `G_q` và ranked unique document list `R_q`, depth khả dụng cho mỗi query là:
 
 ```text
+effective_k(q) = min(K, len(R_q))
+C_q^K = R_q[:effective_k(q)]
 candidate Recall@K(q) = |G_q ∩ C_q^K| / |G_q|
 ```
 
-Báo macro Recall@10/20/50/100/200, **zero-recall query rate** (`Recall@K=0`) và **full-recall query rate** (`Recall@K=1`). K là document depth sau candidate construction; nếu báo chunk depth phải đặt tên riêng.
+Báo macro Recall@10/20/50/100/200, **zero-recall query rate** (`Recall@K=0`) và **full-recall query rate** (`Recall@K=1`). K là requested document depth sau candidate construction; nếu ranked unique list ngắn hơn K, local diagnostic dùng toàn bộ candidate prefix khả dụng như công thức trên. Đây là limited-candidate-pool condition, không phải metric bug. Nếu báo chunk depth phải đặt tên riêng.
+
+Mỗi comparison phải kèm candidate-pool sufficiency: minimum, median và p95 số unique candidate documents, cùng số query có ít hơn từng requested depth đang evaluate (thường là 10/20/50/100/200). Vì vậy, `candidate Recall@200` của một query có 143 candidates thực tế đo trên first 143 available unique documents.
 
 ### Complementarity
 

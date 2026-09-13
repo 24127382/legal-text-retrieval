@@ -1,4 +1,4 @@
-"""Simple lexical BM25 retrieval over fixed C0 chunks."""
+"""Simple lexical BM25 retrieval over fixed-window chunks."""
 
 import re
 from time import perf_counter
@@ -69,6 +69,7 @@ def retrieve_bm25(
     top_k_chunks: int = 1_000,
     top_k_documents: int = 200,
     batch_size: int = 64,
+    candidate_depths: tuple[int, ...] = (10, 20, 50, 100, 200),
 ) -> dict:
     """Retrieve chunks in batches and aggregate unique documents by max score.
 
@@ -83,6 +84,8 @@ def retrieve_bm25(
         raise ValueError("top_k_documents must be greater than zero")
     if batch_size <= 0:
         raise ValueError("batch_size must be greater than zero")
+    if any(depth <= 0 for depth in candidate_depths):
+        raise ValueError("candidate_depths must contain only positive integers")
     if top_k_chunks > index["number_of_chunks"]:
         raise ValueError("top_k_chunks cannot exceed the number of indexed chunks")
 
@@ -123,6 +126,7 @@ def retrieve_bm25(
             unique_document_counts.append(len(seen_documents))
 
     counts = np.asarray(unique_document_counts, dtype=np.int32)
+    requested_depths = tuple(dict.fromkeys(candidate_depths))
     return {
         "rankings": rankings,
         "top_k_chunks": top_k_chunks,
@@ -132,6 +136,8 @@ def retrieve_bm25(
             "min": int(counts.min()) if counts.size else None,
             "median": float(np.median(counts)) if counts.size else None,
             "p95": float(np.percentile(counts, 95)) if counts.size else None,
-            "queries_below_200": int(np.sum(counts < 200)),
+            "queries_below_depth": {
+                depth: int(np.sum(counts < depth)) for depth in requested_depths
+            },
         },
     }

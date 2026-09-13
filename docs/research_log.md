@@ -67,7 +67,7 @@ Line breaks và legal-structure markers là tín hiệu có ích trên phần l�
 
 **Decision**
 
-Chưa implement article parser/chunker từ C00. Phân tích candidate article segments và các failure patterns trước khi chọn chunking strategy.
+Chưa implement article parser/chunker từ candidate-marker diagnostics ban đầu. Phân tích candidate article segments và các failure patterns trước khi chọn chunking strategy.
 
 **Next**
 
@@ -101,11 +101,11 @@ Candidate `Điều` là useful structural signal nhưng không đủ reliable đ
 
 **Decision**
 
-Không dùng candidate article segmentation hiện tại làm C0. Giữ signal này cho validation và structure-aware corpus variants sau khi có baseline toàn-corpus.
+Không dùng candidate article segmentation hiện tại làm fixed corpus representation. Giữ signal này cho validation và structure-aware corpus variants sau khi có baseline toàn-corpus.
 
 **Next**
 
-Chọn một C0 deterministic, model-independent và full-coverage; sau đó dùng fixed retrieval stack để đo riêng causal effect của article/structure-aware alternatives.
+Chọn một fixed-window corpus representation deterministic, model-independent và full-coverage; sau đó dùng fixed retrieval stack để đo riêng causal effect của article/structure-aware alternatives.
 
 ## Corpus representation decision
 
@@ -117,7 +117,7 @@ Corpus representation nào tạo baseline đơn giản, auditable và full-cover
 
 **Key evidence**
 
-- C00/C01 cho thấy candidate structure có coverage đáng kể nhưng không universal và có boundary failures nghiêm trọng.
+- Raw corpus audit và candidate article segment analysis cho thấy candidate structure có coverage đáng kể nhưng không universal và có boundary failures nghiêm trọng.
 - Document và candidate-segment lengths đều có extreme long tails; article-only units không tạo length control ổn định.
 - Một baseline cần tách ảnh hưởng của corpus representation khỏi retriever/reranker để attribution về sau có ý nghĩa.
 
@@ -127,7 +127,7 @@ Fixed-size character windows tạo control ít giả định hơn article bounda
 
 **Decision**
 
-Baseline C0 bắt đầu bằng:
+Fixed-window corpus representation bắt đầu bằng:
 
 ```text
 fixed-size character windows + overlap
@@ -135,7 +135,7 @@ chunk_size = 2000 characters
 overlap = 200 characters
 ```
 
-Đây là initial baseline configuration; parameters phải dễ thay đổi. C0 không dùng article/chapter/clause regex và không normalize source text. Exact provenance là hard invariant:
+Đây là initial baseline configuration; parameters phải dễ thay đổi. Fixed-window representation không dùng article/chapter/clause regex và không normalize source text. Exact provenance là hard invariant:
 
 ```text
 chunk_text == source[char_start:char_end]
@@ -145,7 +145,7 @@ Structure-aware/article-aware chunking không bị loại bỏ; nó được gi�
 
 **Next**
 
-Implement C0, sau đó xây B0 BM25 và đo candidate/document Recall@K trước khi tối ưu reranking. Chỉ sau baseline này mới so sánh alternative corpus representations bằng controlled experiments.
+Implement fixed-window corpus representation, sau đó xây BM25 lexical reference và đo candidate/document Recall@K trước khi tối ưu reranking. Chỉ sau baseline này mới so sánh alternative corpus representations bằng controlled experiments.
 
 ## Fixed-window implementation
 
@@ -180,11 +180,11 @@ Không normalization và không dùng article/chapter/clause boundaries.
 
 **Interpretation**
 
-C0 cung cấp retrieval-unit baseline deterministic, model-independent, không phụ thuộc legal structure regex, phủ mọi non-empty document và giữ exact source provenance. Kết quả không chứng minh cấu hình `2000/200` là optimal.
+Fixed-window corpus representation cung cấp retrieval-unit baseline deterministic, model-independent, không phụ thuộc legal structure regex, phủ mọi non-empty document và giữ exact source provenance. Kết quả không chứng minh cấu hình `2000/200` là optimal.
 
 **Decision**
 
-Freeze cấu hình này cho experiment B0 đầu tiên. Không thay chunking trong khi đánh giá BM25. Structure-aware chunking là corpus-representation experiment riêng sau khi B0 có benchmark.
+Freeze cấu hình này cho BM25 lexical reference đầu tiên. Không thay chunking trong khi đánh giá BM25. Structure-aware chunking là corpus-representation experiment riêng sau khi lexical reference có benchmark.
 
 ## BM25 lexical baseline
 
@@ -192,12 +192,12 @@ Freeze cấu hình này cho experiment B0 đầu tiên. Không thay chunking tro
 
 **Question**
 
-C0 + lexical BM25 có candidate coverage bao nhiêu trước khi thêm dense retrieval/reranking?
+Fixed-window corpus representation + lexical BM25 có candidate coverage bao nhiêu trước khi thêm dense retrieval/reranking?
 
 **Fixed corpus**
 
 ```text
-C0
+fixed-window corpus representation
 chunk_size = 2000
 overlap = 200
 ```
@@ -227,7 +227,7 @@ This is a full-train zero-shot diagnostic benchmark, not a held-out validation s
 - Official-style top-5 precision: 0,161600; official-style top-5 recall: 0,761624.
 - 7.000 queries; 222 queries có zero Recall@100; 6.647 có full Recall@100; 1.393 có gold đầu tiên xuất hiện sau rank 5 nhưng không muộn hơn retained rank 200.
 - Unique documents từ 2.000-chunk pool: min 128; median 676; p95 979; 8 queries dưới 200 unique documents.
-- C0 construction: 2,75 s; index build: 32,59 s; retrieval + aggregation: 21,08 s trên local machine.
+- Fixed-window corpus construction: 2,75 s; index build: 32,59 s; retrieval + aggregation: 21,08 s trên local machine.
 - 199.816 chunks indexed; sparse score arrays chiếm 248.208.568 bytes (khoảng 236,7 MiB), chưa tính Python metadata/vocabulary overhead.
 
 **Interpretation**
@@ -238,7 +238,7 @@ Gap giữa official-style top-5 recall 0,7616 và candidate Recall@100/200 lần
 
 **Decision**
 
-Giữ B00 làm lexical reference trên C0. Trước hyperparameter optimization, tạo fixed validation split; trước khi chọn dense/hybrid hay reranker, inspect zero-recall và deep-rank samples để tách coverage failure khỏi ranking failure. Không tự động chuyển sang dense/hybrid và không thay C0 từ result này.
+Giữ fixed-window BM25 run làm lexical reference. Trước hyperparameter optimization, tạo fixed validation split; trước khi chọn dense/hybrid hay reranker, inspect zero-recall và deep-rank samples để tách coverage failure khỏi ranking failure. Không tự động chuyển sang dense/hybrid và không thay fixed-window corpus representation từ result này.
 
 ## Fixed LegalIR train/dev/holdout split
 
@@ -287,7 +287,7 @@ Drift quan sát được nhỏ; split không được search hay điều chỉnh
 
 **Decision**
 
-Freeze `legalir_split_v1`. Train dành cho supervised/domain-adaptation experiments; dev dành cho error inspection, hyperparameter tuning và method selection; holdout chỉ dành cho aggregate local held-out evaluation, không phải competition test set và không được inspect theo sample trong lúc phát triển method.
+Freeze `legalir_split_v1`. Train dành cho supervised/domain-adaptation experiments; dev là split duy nhất dành cho error inspection, hyperparameter tuning và method selection; fixed local holdout chỉ dành cho aggregate evaluation sau khi configuration đã freeze, không phải competition test set và không được inspect theo sample trong lúc phát triển method.
 
 ## BM25 reference on fixed split
 
@@ -412,3 +412,23 @@ Khoảng cách Recall@200 với top-5 recall vẫn lớn: khoảng 21,32 percent
 ### Decision
 
 Giữ fixed-window BM25 run làm unchanged reference và freeze split v1. Pattern `high Recall@100/200` nhưng `significantly lower top-5 recall` được lặp lại, nên major axis tiếp theo là **document ranking / chunk→document aggregation**, chỉ tune/chọn method bằng dev. Holdout không được dùng để thay đổi method. Task này không implement retrieval, aggregation hay reranking alternative nào.
+
+## Evaluation protocol clarification
+
+**Date / source state:** 2026-09-13 / protocol clarification after fixed-split reference run
+
+### Reason
+
+- Holdout usage cần strict hơn để các development iterations không biến aggregate held-out estimate thành selection signal.
+- Current holdout không pristine vì full-7.000-query zero-shot BM25 diagnostic và một số aggregate/failure information đã được inspect trước khi split được freeze.
+- Candidate Recall@K cần explicit effective-depth semantics khi candidate pool có ít hơn K unique documents.
+
+### Protocol decision
+
+- [Evaluation contract](04_evaluation_and_diagnostics.md#dev-và-fixed-local-holdout) là canonical: dev là split duy nhất cho method selection, error inspection và hyperparameter tuning. Holdout chỉ được evaluate ở aggregate level sau khi configuration đã được chọn bằng dev và freeze; không inspect holdout samples/failure IDs, không sửa method từ holdout errors và không chọn giữa alternatives bằng holdout score.
+- Gọi split này là **fixed local holdout**. Nó vẫn hữu ích cho relative generalization và chưa có tuning trực tiếp trên holdout IDs, nhưng không phải pristine untouched, independent hoặc final test set theo strict experimental design.
+- Với requested depth K, candidate recall dùng `effective_k(q) = min(K, len(ranked_unique_documents_q))`. Query có list ngắn hơn K dùng toàn bộ available prefix; đây là limited-candidate-pool condition, không phải bug.
+- Future comparisons phải report minimum/median/p95 unique candidate documents và `queries_below_depth` cho các candidate depths được evaluate.
+- Existing aggregate holdout metrics ở entry trước thiết lập current reference. Future development iterations không repeatedly evaluate holdout.
+
+Entry này không ghi experimental result mới và không thay split assignment, retrieval configuration hoặc metric implementation.

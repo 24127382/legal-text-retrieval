@@ -1,4 +1,4 @@
-"""Deterministic fixed-size character windows for corpus baseline C0."""
+"""Deterministic fixed-size character windows for the corpus reference."""
 
 from collections import Counter
 
@@ -57,7 +57,7 @@ def chunk_document(
 def chunk_corpus(
     documents: list[dict], chunk_size: int = 2_000, overlap: int = 200
 ) -> list[dict]:
-    """Return C0 fixed-window chunks for corpus documents in input order."""
+    """Return fixed-window chunks for corpus documents in input order."""
 
     _validate_window_parameters(chunk_size, overlap)
 
@@ -95,7 +95,7 @@ def _distribution(values: list[int]) -> dict:
 
 
 def analyze_chunks(documents: list[dict], chunks: list[dict]) -> dict:
-    """Return compact C0 chunk counts and character-length statistics."""
+    """Return compact fixed-window chunk counts and length statistics."""
 
     chunk_counts = Counter(chunk["document_id"] for chunk in chunks)
     document_ids = [str(document["id"]) for document in documents]

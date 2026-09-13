@@ -37,11 +37,21 @@ class BM25SanityTests(unittest.TestCase):
         samples = {"q": {"question": "thuế đất", "answer": ["a"]}}
 
         index = build_bm25(chunks)
-        run = retrieve_bm25(index, samples, top_k_chunks=3, top_k_documents=3)
+        run = retrieve_bm25(
+            index,
+            samples,
+            top_k_chunks=3,
+            top_k_documents=3,
+            candidate_depths=(1, 2, 3),
+        )
 
         self.assertEqual(run["rankings"]["q"][0], "a")
         self.assertEqual(len(run["rankings"]["q"]), 2)
         self.assertEqual(len(set(run["rankings"]["q"])), 2)
+        self.assertEqual(
+            run["unique_documents_from_chunk_pool"]["queries_below_depth"],
+            {1: 0, 2: 0, 3: 1},
+        )
 
     def test_metrics_match_tiny_document_ranking(self) -> None:
         samples = {
