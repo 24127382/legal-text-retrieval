@@ -10,6 +10,7 @@ from src.ir import (
     make_legalir_split,
     retrieve_bm25,
 )
+from src.ir.rerank import paired_bootstrap, rerank_documents
 
 
 class BM25SanityTests(unittest.TestCase):
@@ -136,8 +137,8 @@ class BM25SanityTests(unittest.TestCase):
             "q2": {"question": "two", "answer": ["z"]},
         }
         rankings = {
-            "q1": ["x", "a", "x", "y", "b", "w"],
-            "q2": ["a", "b", "c", "d", "z", "z"],
+            "q1": ["x", "a", "y", "b", "w"],
+            "q2": ["a", "b", "c", "d", "z"],
         }
 
         predictions = make_legalir_predictions(rankings)
@@ -187,6 +188,62 @@ class BM25SanityTests(unittest.TestCase):
             abs(float(bundled_metrics["recall"]) - local_metrics["recall"]),
             1e-12,
         )
+
+    def test_prediction_adapter_rejects_duplicate_submission_ids(self) -> None:
+        with self.assertRaisesRegex(ValueError, "duplicate IDs"):
+            make_legalir_predictions({"q": ["a", "b", "a", "c", "d", "e"]})
+
+    def test_reranker_sums_scores_and_preserves_candidates(self) -> None:
+        candidates = [
+            {
+                "document_id": "a",
+                "original_rank": 1,
+                "original_score": 7.0,
+                "supporting_chunks": [{"text": "a1"}, {"text": "a2"}],
+            },
+            {
+                "document_id": "b",
+                "original_rank": 2,
+                "original_score": 6.0,
+                "supporting_chunks": [{"text": "b1"}],
+            },
+        ]
+
+        reranked = rerank_documents(candidates, [[1.0, 2.0], [4.0]])
+
+        self.assertEqual([item["document_id"] for item in reranked], ["b", "a"])
+        self.assertEqual(reranked[1]["cross_encoder_score"], 3.0)
+        self.assertEqual({item["document_id"] for item in reranked}, {"a", "b"})
+
+    def test_reranker_uses_original_rank_then_id_for_ties(self) -> None:
+        candidates = [
+            {
+                "document_id": "b",
+                "original_rank": 2,
+                "supporting_chunks": [{"text": "b"}],
+            },
+            {
+                "document_id": "z",
+                "original_rank": 1,
+                "supporting_chunks": [{"text": "z"}],
+            },
+            {
+                "document_id": "a",
+                "original_rank": 2,
+                "supporting_chunks": [{"text": "a"}],
+            },
+        ]
+
+        reranked = rerank_documents(candidates, [[1.0], [1.0], [1.0]])
+
+        self.assertEqual([item["document_id"] for item in reranked], ["z", "a", "b"])
+
+    def test_paired_bootstrap_is_deterministic(self) -> None:
+        first = paired_bootstrap([0.0, 1.0], [1.0, 1.0], seed=7, resamples=20)
+        second = paired_bootstrap([0.0, 1.0], [1.0, 1.0], seed=7, resamples=20)
+
+        self.assertEqual(first, second)
+        self.assertEqual(first["observed_delta"], 0.5)
 
 
 if __name__ == "__main__":
