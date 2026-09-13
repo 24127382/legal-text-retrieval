@@ -585,3 +585,7 @@ Fixed local holdout không phải pristine untouched test set. Sum top-2 đã đ
 The DEV-selected sum-top-2 aggregation generalizes directionally on the fixed local holdout.
 
 Có thể giữ sum top-2 làm current fixed document aggregation reference cho các experiment tiếp theo. Decision này không mở lại aggregation search và không thay retrieval, chunking, tokenizer, BM25 controls hay split.
+
+## Kaggle offline execution workflow
+
+Từ 2026-09-13, executable research experiments, preprocessing và inference được duy trì dưới dạng standalone Kaggle notebooks chạy với Internet disabled. Mỗi notebook inline implementation và experiment-level sanity checks, chỉ dùng package có sẵn hoặc resource được attach rõ ràng qua Kaggle Input, và không phụ thuộc vào repository `src/`. Các local Python research modules và test suite cũ được gỡ để tránh hai implementation authority song song; historical entries ở trên vẫn mô tả đúng code và evidence tại thời điểm từng run.

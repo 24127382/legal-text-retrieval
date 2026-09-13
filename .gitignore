@@ -221,6 +221,23 @@ __marimo__/
 /data/
 *.zip
 
+# Local experiment/model artifacts
+/artifacts/
+/indexes/
+/models/
+/outputs/
+/predictions/
+/submissions/
+*.bin
+*.ckpt
+*.onnx
+*.pt
+*.pth
+*.safetensors
+sentencepiece*.model
+tokenizer.json
+tokenizer.model
+
 .DS_Store
 
 scripts/

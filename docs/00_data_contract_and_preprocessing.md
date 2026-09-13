@@ -10,12 +10,12 @@ Thứ tự thẩm quyền:
 scoring/                     → immutable competition scoring truth
 competition/local data       → raw task/data truth
 docs/                        → research contract
-src/                         → current implementation/prototype
+notebooks/                   → standalone executable experiments
 ```
 
 `data/` bị Git ignore. Mọi schema hoặc thống kê nêu là quan sát từ snapshot local phải được ghi như vậy; không được suy ra dữ liệu đó đã được commit, không copy raw competition data vào Git, và không mở rộng quan sát local thành claim về private/unavailable splits.
 
-Trạng thái được dùng thống nhất: `Code present`, `Validated`, `Benchmarked`, `Planned`, `Research candidate`, `Speculative`. Hiện chỉ raw schema/loader/audit trong `src/data/` là `Code present`; parser, chunker, retrieval và modeling chưa được implement lại. Chưa có artifact được version-control để gọi raw snapshot hoặc canonical corpus là `Validated` hay `Benchmarked`.
+Trạng thái được dùng thống nhất: `Code present`, `Validated`, `Benchmarked`, `Planned`, `Research candidate`, `Speculative`. Executable preprocessing, retrieval và modeling implementation phải nằm trong standalone notebook cùng các sanity checks cần thiết; repository không duy trì `src/` runtime song song. Chưa có artifact được version-control để gọi raw snapshot hoặc canonical corpus là `Validated` hay `Benchmarked`.
 
 ## Preprocessing là một research layer
 
@@ -56,11 +56,11 @@ Quan sát read-only ngày 2026-09-12 trên máy hiện tại, không phải arti
 - Snapshot có 20 record với `passage` rỗng. Đây là lý do phải báo lỗi/ngoại lệ minh bạch, không phải quyền tự động drop record.
 - Raw `passage` character length rất lệch (median 23.108, p95 135.624, max 5.983.358 ký tự); đây chỉ là character diagnostic, không thay token-length measurement theo model. Có exact-duplicate non-empty passages trong snapshot, nhưng text lặp không tự động là leakage.
 
-Các con số trên chưa thay thế D00: cần manifest, script/audit artifact tái lập được và fingerprint được lưu ngoài raw data. Private split, các bản dữ liệu khác, semantics của `link`, chất lượng `name`, document version/effective date và gold-document/passage/span mapping vẫn chưa được xác minh.
+Các con số trên chưa thay thế D00: cần manifest, notebook audit artifact tái lập được và fingerprint được lưu ngoài raw data. Private split, các bản dữ liệu khác, semantics của `link`, chất lượng `name`, document version/effective date và gold-document/passage/span mapping vẫn chưa được xác minh.
 
-## Raw-data implementation hiện tại (`Code present`)
+## Executable data checks
 
-Layout local quan sát được và được `audit_all` hỗ trợ là:
+Layout local đã được quan sát trong research history là:
 
 ```text
 data_root/
@@ -74,18 +74,7 @@ data_root/
     └── selected-contexts/*.json
 ```
 
-Caller truyền root; code không hard-code đường dẫn local hoặc Kaggle:
-
-```python
-from src.data import audit_all, save_report
-
-report = audit_all(data_root="data", split_filename="train.json")
-save_report(report, "data_audit.json")
-```
-
-`src/data/schemas.py` giữ representation raw và phân biệt field missing, JSON `null`, chuỗi rỗng và list rỗng. `src/data/loaders.py` đọc JSON file hoặc directory theo thứ tự tên deterministic; competition download cần được giải nén trước khi load. Loader không normalize, parse, chunk hoặc silently drop record. `src/data/audit.py` tạo JSON-serializable report schema version 2, fingerprint dataset/corpus của từng task, so sánh hai corpus snapshot thay vì mặc định chúng giống nhau, và chỉ reuse corpus audit khi directory fingerprints khớp chính xác.
-
-Unit tests và full-snapshot smoke test hiện pass, nhưng đây là validation của code path trên snapshot local, không phải artifact đủ để promotion toàn bộ data/corpus layer thành `Validated`.
+Mỗi executable notebook phải nhận các path Kaggle Input tường minh, load source-preserving, phân biệt field missing/JSON `null`/empty values, kiểm tra schema và fingerprint cần thiết bằng notebook-local cells, rồi ghi aggregate audit artifact nếu experiment contract yêu cầu. Notebook không được download dữ liệu hoặc import một shared project runtime; historical implementation evidence vẫn được giữ trong `research_log.md`.
 
 ## Question/query representation contract
 

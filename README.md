@@ -24,6 +24,32 @@ Luồng nghiên cứu là `Data & Corpus Representation → LegalIR → LegalQA`
 
 Canonical corpus tạo nền tảng cho LegalIR và evidence-grounded LegalQA. QA0 closed-book, và gold-evidence oracle khi mapping đã được verify, có thể chạy theo dependency riêng.
 
+## Execution workflow
+
+```text
+research design trong docs/
+        ↓
+standalone offline Kaggle notebook
+        ↓
+experiment result hoặc prediction JSON
+        ↓
+evidence trong docs/research_log.md
+        ↓
+minimal submission packaging
+```
+
+`notebooks/` là nơi chứa executable experiment/inference artifacts. Mỗi notebook phải self-contained, không import `src` hoặc phụ thuộc vào repository checkout, và phải chạy được khi Kaggle Internet bị tắt. Notebook chỉ được dùng package có sẵn trong Kaggle runtime hoặc file được attach rõ ràng qua Kaggle Input. Model/tokenizer phải được load từ path local dạng `/kaggle/input/<attached-model-dataset>/...`, với offline/local-only mode; thiếu resource phải dừng bằng lỗi rõ ràng, không fallback sang network.
+
+`scoring/` là organizer-provided authority và không được refactor. Project-authored Python chỉ giới hạn ở utility đóng gói submission trong `tools/`; mọi implementation phục vụ preprocessing, retrieval, reranking, inference và experiment-level sanity checks phải nằm trực tiếp trong notebook.
+
+Để đóng gói một prediction JSON đã được notebook tạo:
+
+```text
+python tools/package_submission.py path/to/<organizer_expected_filename>.json submission.zip
+```
+
+Tên JSON phải lấy từ sample submission hoặc phase instructions chính thức; utility giữ nguyên basename và đặt file trực tiếp ở root của ZIP.
+
 ## Đóng góp
 
 Đọc [CONTRIBUTING.md](CONTRIBUTING.md) trước khi đóng góp. Các thay đổi nghiên cứu cần ghi rõ giả thuyết, control, dữ liệu/split, metric và trạng thái (`Code present`, `Validated`, `Benchmarked`, `Planned`, `Research candidate` hoặc `Speculative`).

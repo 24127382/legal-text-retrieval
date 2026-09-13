@@ -13,24 +13,24 @@ Chào mừng các bạn đến với repository của nhóm! Để đảm bảo 
 - Gắn thẻ (tag) ít nhất **1 thành viên khác** vào để **Code Review**.
 - Chỉ khi người review Approve (chấp thuận), bạn mới được phép Merge PR vào nhánh `main`.
 
-## 2. Quản lý Dữ liệu và Model Weights
+## 2. Execution model
 
-- **KHÔNG push file dữ liệu lớn lên Github**. Mọi file dữ liệu phải được lưu trong thư mục `data/` (thư mục này đã được đưa vào `.gitignore`).
-- **KHÔNG push model weights** (`.bin`, `.pt`, `.h5`, v.v.). Nếu cần chia sẻ model, hãy up lên Google Drive/Hugging Face và gửi link.
-- Chỉ push code (file `.py`, `.md`, `.txt`, `.ipynb` nhưng lưu ý clear output của `.ipynb` trước khi push nếu quá nặng).
+- `docs/` giữ research reasoning và experiment evidence; `notebooks/` giữ executable experiment/inference artifacts.
+- Notebook phải standalone: không import `src`, không dựa vào repository checkout và không tách implementation sang một local Python package dùng chung.
+- Target runtime là Kaggle với Internet disabled. Chỉ dùng package đã có trong runtime hoặc offline wheel được attach qua Kaggle Input và cài bằng `--no-index`.
+- Dataset, model snapshot, tokenizer và resource khác phải được attach rõ ràng dưới `/kaggle/input/...`. Luôn load model từ local path với local-only mode; thiếu file phải fail loudly, không download hoặc fallback sang network.
+- Schema, provenance, unique IDs, candidate universe, finite scores, deterministic ranking và output format phải được kiểm tra bằng assertion/sanity-check cells trong notebook.
 
-## 3. Cài đặt Thư viện
+## 3. Repository boundaries
 
-- Bất cứ khi nào bạn chạy `pip install <thư-viện>`, bạn phải cập nhật file `requirements.txt`:
-  - Lệnh: `pip freeze > requirements.txt` (hoặc thêm thủ công vào file).
-- Báo cho team biết để mọi người chạy lại `pip install -r requirements.txt` trên máy của họ.
+- `scoring/LegalIR/` và `scoring/LegalQA/` là immutable organizer artifacts; không cleanup hoặc refactor.
+- Project-authored `.py` chỉ được dùng cho minimal submission packaging trong `tools/`. Không tạo lại runtime research library dưới `src/`, `lib/`, `common/`, `utils/`, `core/` hoặc `pipeline/`.
+- Không duy trì test suite Python riêng chỉ để test notebook implementation. Đặt experiment-level tests cạnh implementation trong notebook.
 
-## 4. Phân công Công việc Tham khảo
+## 4. Dữ liệu và artifacts
 
-- **Data Engineer**: Xử lý `src/parser.py`, `src/schema.py` và các file trong `notebooks/`.
-- **Text Processor**: Xử lý `src/chunker.py` (cắt luật theo điều khoản).
-- **Retrieval Engineer**: Xử lý `src/embedder.py`, `src/index_loader.py` (Cài đặt BM25, FAISS).
-- **Evaluator**: Xử lý `src/validator.py`, `src/metrics.py`.
-- **System Integrator**: Xử lý luồng chính trong `src/pipeline.py` và `main.py`.
+- Không đưa raw data, Kaggle datasets, model/tokenizer weights, indexes, embeddings, chunk/prediction dumps, ZIP submission hoặc output experiment lớn vào Git.
+- Notebook outputs chỉ được giữ khi cần làm evidence nhỏ, reviewable; kết quả nghiên cứu phải được tóm tắt trung thực trong `docs/research_log.md`.
+- Utility packaging chỉ validate prediction đã có và tạo ZIP; không inference, không sửa semantic output và không tự đặt organizer filename.
 
 Chúc cả nhóm làm việc hiệu quả và chinh phục giải thưởng DSC 2026! 🚀
