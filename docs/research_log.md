@@ -589,3 +589,225 @@ Có thể giữ sum top-2 làm current fixed document aggregation reference cho 
 ## Kaggle offline execution workflow
 
 Từ 2026-09-13, executable research experiments, preprocessing và inference được duy trì dưới dạng standalone Kaggle notebooks chạy với Internet disabled. Mỗi notebook inline implementation và experiment-level sanity checks, chỉ dùng package có sẵn hoặc resource được attach rõ ràng qua Kaggle Input, và không phụ thuộc vào repository `src/`. Các local Python research modules và test suite cũ được gỡ để tránh hai implementation authority song song; historical entries ở trên vẫn mô tả đúng code và evidence tại thời điểm từng run.
+
+## Zero-shot cross-encoder reranking on fixed BM25 candidates
+
+### Question
+
+Can a zero-shot cross-encoder improve final document ranking while the BM25 candidate set and all upstream controls remain fixed?
+
+### Fixed controls
+
+- Corpus: 8.532 documents, 199.816 fixed character-window chunks, `chunk_size=2000`, `overlap=200`.
+- Retrieval: `bm25s==0.3.11`, Lucene BM25, `k1=1.5`, `b=0.75`, top 2.000 BM25 chunks.
+- Document aggregation: sum of the top 2 BM25 chunk scores, then top 100 document candidates.
+- Cross-encoder: `BAAI/bge-reranker-v2-m3`; mỗi candidate document dùng tối đa 2 supporting chunks có BM25 score cao nhất.
+- Cross-encoder document score: tổng của tối đa 2 query–chunk scores được chấm độc lập.
+- Output: final top 5 documents.
+- Data: fixed DEV gồm 1.036 queries.
+
+### Candidate invariant
+
+Candidate sets giống hệt nhau trước và sau reranking trên `1036 / 1036` queries. Candidate Recall@100 giữ nguyên ở `0.9573680823680824`; cross-encoder chỉ thay đổi thứ hạng bên trong fixed candidate set.
+
+### Results
+
+`Precision` và `Recall` là top-5 metrics. `MRR` được tính trong fixed top-100 scope.
+
+| System | Precision | Recall | MRR |
+|---|---:|---:|---:|
+| BM25 reference | 0.16776061776061776 | 0.7865990990990991 | 0.6341294531279422 |
+| Zero-shot CE reranked | 0.18127413127413128 | 0.8532818532818532 | 0.711994384154137 |
+| Reranked − reference | +0.013513513513513514 | +0.06668275418275416 | +0.07786493102619474 |
+
+Deeper-ranking deltas: Recall@10 `+0.03949485199485214`; Recall@20 `+0.025740025740025763`; Recall@50 `+0.013191763191763295`.
+
+### DEV paired bootstrap
+
+Paired bootstrap dùng seed `20260913` và 10.000 resamples.
+
+| Metric | Observed delta | 95% percentile interval | Fraction delta > 0 |
+|---|---:|---:|---:|
+| Precision | +0.013513513513513514 | [0.008687258687258687; 0.018532818532818532] | 1.0 |
+| Recall | +0.06668275418275416 | [0.044642857142857144; 0.08960746460746462] | 1.0 |
+
+Hai intervals nằm hoàn toàn trên 0 và fraction positive bằng 1.0, cung cấp bootstrap stability evidence cho improvement quan sát được trên fixed DEV. Đây không phải automatic claim về universal statistical significance.
+
+### Decision
+
+DEV result chọn configuration zero-shot cross-encoder này để kiểm tra đúng một lần trên fixed local holdout với candidate set và downstream controls giữ nguyên.
+
+## Fixed-holdout validation of zero-shot cross-encoder reranking
+
+**Date / documentation source state:** 2026-09-14 / starting commit `bc585cd55e8552904981b5380c370b045a72dd3a`
+
+### Question
+
+Does the DEV-selected zero-shot cross-encoder reranking configuration generalize on the fixed local holdout without changing retrieval coverage?
+
+### Frozen configuration
+
+- Fixed local holdout: 1.023 queries từ `legalir_split_v1`; source SHA-256 `c39cde9e74977e350f1456e7d487aafe67d2bcbaa4fa26fcabd557fe635635b7`.
+- Corpus: 8.532 documents, 199.816 fixed character-window chunks, `chunk_size=2000`, `overlap=200`.
+- BM25: `bm25s==0.3.11`, `method="lucene"`, `k1=1.5`, `b=0.75`, `top_k_chunks=2000`.
+- Document aggregation: sum of the top 2 BM25 chunk scores; deterministic tie-breaking giữ nguyên.
+- Reranking scope: top 100 documents; mỗi candidate document dùng tối đa 2 supporting chunks có BM25 score cao nhất.
+- Cross-encoder: `BAAI/bge-reranker-v2-m3`; declared offline source revision `953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e`; `config_commit_hash=null`; `revision_status="declared-offline-snapshot"`. Revision này được khai báo theo offline snapshot, không được cryptographically verified hoặc metadata-verified.
+- Runtime model configuration: `max_sequence_length=8192`, `dtype=float16`, `batch_size=128`, `device="cuda"`.
+- Cross-encoder document score: tổng của tối đa 2 query–chunk scores được chấm độc lập.
+- Output: final top 5 documents.
+
+### Attribution check
+
+Candidate sets giống hệt nhau trên 1.023/1.023 queries. Candidate Recall@100 có mean `0.9565004887585533`, zero-recall rate `0.033235581622678395` và full-recall rate `0.946236559139785`; Recall@100 delta sau reranking bằng đúng `0`.
+
+Vì retrieval coverage và candidate set được giữ nguyên, các thay đổi metric quan sát được trong comparison này được quy cho việc cross-encoder thay đổi thứ hạng bên trong fixed top-100 candidate set, không phải tìm thêm document.
+
+### Results
+
+`Precision` và `Recall` là bundled-scorer-compatible top-5 metrics. `MRR` và Recall@K với K lớn hơn 5 là internal fixed-top-100 diagnostics.
+
+| System | Precision | Recall | MRR | R@10 | R@20 | R@50 | R@100 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| BM25 → sum-top-2 aggregation → top-100 | 0.1640273704789834 | 0.7796513522319974 | 0.6216648309745825 | 0.8397686542847833 | 0.9002117953730857 | 0.9382535027696318 | 0.9565004887585533 |
+| + zero-shot BGE reranking | 0.17888563049853376 | 0.8456337569240794 | 0.711260732959998 | 0.8959758879113718 | 0.9270120560443141 | 0.9488432714239166 | 0.9565004887585533 |
+| Reranked − reference | +0.014858260019550373 | +0.06598240469208194 | +0.08959590198541556 | +0.056207233626588526 | +0.026800260671228426 | +0.010589768654284737 | 0 |
+
+Recall@5 bằng bundled-scorer-compatible recall: reference `0.7796513522319974`, reranked `0.8456337569240795`.
+
+### Ranking diagnostics
+
+First-gold rank distribution thay đổi như sau:
+
+| System | Median | p90 | p95 | Rank 1 | Rank 2–5 | Rank 6–10 | Rank 11–20 | Rank 21–50 | Rank 51–100 | Not found |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Reference | 1 | 11 | 21.6 | 499 | 322 | 59 | 58 | 36 | 15 | 34 |
+| Reranked | 1 | 6 | 11 | 605 | 281 | 48 | 29 | 20 | 6 | 34 |
+
+Các thay đổi nổi bật là rank 1 `499 → 605`, p90 `11 → 6`, p95 `21.6 → 11`; số query không tìm thấy gold trong top-100 giữ nguyên `34 → 34`.
+
+Candidate Recall@100 ceiling là `0.9565004887585533`. Gap từ ceiling đến top-5 recall giảm từ `0.1768491365265559` trước reranking xuống `0.1108667318344739` sau reranking, tức giảm `0.06598240469208194` và đóng khoảng 37,3% pre-reranking ranking gap. Đây là descriptive evidence cho fixed local holdout và configuration này, không phải universal reranking effect.
+
+### DEV-to-holdout consistency
+
+DEV reranked precision/recall dùng cho consistency check là `0.18127413127413128`/`0.8532818532818532`, với delta `+0.013513513513513514`/`+0.06668275418275416`. Holdout delta precision/recall là `+0.014858260019550373`/`+0.06598240469208194`. Direction đồng thuận và magnitude broadly similar giữa DEV và fixed local holdout, hỗ trợ generalization của configuration đã được chọn trên DEV.
+
+Không chạy statistical test trên holdout. Fixed local holdout này không phải pristine test-set validation vì các giới hạn lịch sử đã được ghi trong evaluation contract và các entry trước.
+
+### Runtime evidence
+
+Model load mất `5.214470453999979` giây và candidate retrieval mất `4.721719871000005` giây. Run chấm `204584` query–chunk pairs; token length có median 521, p95 588, max 1524, với 0 truncated pairs và truncated fraction bằng 0. Model forward mất `455.1988099450002` giây; scoring end-to-end mất `535.9143444150001` giây; throughput tương ứng là `449.43878483495826` forward pairs/second và `381.7475724097706` end-to-end pairs/second. Peak GPU memory là `5840218112` bytes. Các số liệu này chỉ mô tả run; task không so sánh batch size hoặc hardware configuration nên không rút ra optimization conclusion.
+
+### Interpretation
+
+Trên fixed local holdout này, cross-encoder cải thiện đáng kể final document ranking và đóng khoảng 37,3% khoảng cách giữa Recall@100 ceiling với top-5 recall. Candidate coverage không đổi, nên kết quả validate reranking như một component hữu ích trong fixed pipeline. Residual errors vẫn gồm cả remaining ranking error trong candidate set và candidate-coverage failures ngoài top 100.
+
+### Decision
+
+Keep the zero-shot BGE reranker configuration as the current frozen LegalIR reranking reference.
+
+The DEV-selected zero-shot cross-encoder configuration generalizes directionally on the fixed local holdout. Do not reopen reranker tuning without new evidence.
+
+Current reference system:
+
+```text
+fixed-window corpus
+→ BM25 top-2000 chunks
+→ sum-top-2 BM25 document aggregation
+→ top-100 documents
+→ BGE-reranker-v2-m3
+→ up to 2 supporting chunks/document
+→ sum CE scores
+→ final top-5
+```
+
+Decision này không cố định final output size vĩnh viễn; DEV final-selection calibration là experiment riêng đang tiếp diễn. Decision cũng không coi retrieval là đã giải quyết; dense-retrieval coverage là experiment riêng.
+
+## Fixed final output-size calibration on frozen DEV cross-encoder ranking
+
+### Question
+
+Does a fixed output size smaller than 5 Pareto-improve precision and recall on the frozen cross-encoder ranking?
+
+### Fixed comparison
+
+Exact same frozen ranking được evaluate một lần với các prefix lengths từ 1 đến 5; không thay retrieval, candidate set, cross-encoder scoring hoặc document order.
+
+| k | Precision | Recall |
+|---:|---:|---:|
+| 1 | 0.5878378378378378 | 0.5597651222651223 |
+| 2 | 0.38175675675675674 | 0.7195141570141571 |
+| 3 | 0.27734877734877733 | 0.7841859716859716 |
+| 4 | 0.2203185328185328 | 0.8301158301158301 |
+| 5 | 0.18127413127413128 | 0.8532818532818532 |
+
+Không có `k < 5` nào Pareto-improve so với `k=5`: mọi fixed k nhỏ hơn đều tăng precision nhưng giảm recall. Riêng `k=4`, delta so với `k=5` là precision `+0.03904440154440153` và recall `-0.02316602316602312`. Chỉ 26/1.036 queries mất recall khi chuyển từ `k=5` xuống `k=4`, trong khi precision cải thiện trên 882 queries.
+
+### Decision
+
+Không thay `k=5` bằng một fixed k khác dựa trên experiment này. Giữ `k=5` làm current reference cho đến khi competition objective hoặc leaderboard weighting biện minh cho một trade-off khác. Adaptive final-k là một potential research axis riêng và chưa được test ở đây.
+
+## BGE-M3 dense retrieval coverage on fixed DEV split
+
+### Question
+
+Does multilingual dense retrieval improve candidate coverage and recover relevant documents missed by BM25?
+
+### Fixed controls and implementation
+
+- Corpus và representation giữ nguyên: 8.532 documents, 199.816 fixed character-window chunks, `chunk_size=2000`, `overlap=200`.
+- Data giữ nguyên: fixed DEV gồm 1.036 queries.
+- Retrieval depth: top 2.000 chunks.
+- Document aggregation: sum of the top 2 retrieval chunk scores.
+- Không dùng cross-encoder và không dùng fusion.
+- Dense model: `BAAI/bge-m3`; declared revision `5617a9f61b028005a4858fdac845db406aefb181` từ offline snapshot; config commit hash unavailable.
+- Embedding implementation: L2-normalized CLS hidden state từ Transformers `AutoModel`; similarity là dot product.
+
+### Recall comparison
+
+| K | BM25 | BGE-M3 |
+|---:|---:|---:|
+| 10 | 0.8643018018018017 | 0.9227799227799228 |
+| 20 | 0.9073359073359073 | 0.9497265122265123 |
+| 50 | 0.938867438867439 | 0.9769144144144144 |
+| 100 | 0.9573680823680824 | 0.9819015444015444 |
+| 200 | 0.9726512226512226 | 0.9877734877734878 |
+
+MRR của BM25 là `0.6342514700877372`; MRR của dense retrieval là `0.7159583402955311`.
+
+### Complementarity
+
+Tại top 100, số gold documents theo coverage category là: found by both `1067`, BM25-only `6`, dense-only `39`, neither `20`. Có 37 queries với ít nhất một dense-only recovered gold và 6 queries với ít nhất một BM25-only recovered gold.
+
+Union Recall@100 ceiling là `0.986003861003861`, so với dense Recall@100 `0.9819015444015444`; vì vậy union chỉ thêm khoảng `0.00410` absolute recall so với dense alone ở depth này.
+
+Tại top 200, BM25 Recall là `0.9726512226512226`, dense Recall là `0.9877734877734878`, và union Recall là `0.9909909909909909`.
+
+### Interpretation
+
+Dense retrieval mạnh hơn BM25 dưới fixed representation và genuinely complementary vì recover được relevant documents mà BM25 bỏ lỡ. Tuy nhiên, dense alone đã chiếm phần lớn observed union coverage gain.
+
+### Decision
+
+Không chuyển thẳng sang hybrid fusion. Controlled experiment tiếp theo là `BGE-M3 dense retrieval → frozen validated cross-encoder`, được so sánh với `BM25 → frozen validated cross-encoder` trong khi giữ cố định mọi downstream variable.
+
+## Current LegalIR research state
+
+Validated current submission/reference system:
+
+```text
+fixed-window corpus
+→ BM25
+→ sum-top-2 document aggregation
+→ top-100 documents
+→ BGE reranker
+→ final top-5
+```
+
+Cross-encoder reranking đã được validate trên DEV và fixed local holdout. Fixed-k calibration không tìm thấy fixed output size dưới 5 nào Pareto-dominate `k=5`. Dense BGE-M3 retrieval cải thiện mạnh candidate coverage và hiện là active retrieval candidate cho comparison với frozen cross-encoder.
+
+Dense → CE chưa có returned result và chưa được coi là validated.
+
+### Public inference note
+
+Một public-test inference notebook đã được execute cho current validated BM25 → CE system. Chưa ghi Codabench score, rank hoặc submission outcome vì chưa có submission result được cung cấp. Public test không thay thế methodology dựa trên DEV và fixed local holdout.
