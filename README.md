@@ -21,8 +21,14 @@ Luồng nghiên cứu là `Data & Corpus Representation → LegalIR → LegalQA`
 | [06 — Chiến lược LegalQA](docs/06_legalqa_strategy.md) | Oracle, retrieve–rerank–generate, evidence selection và verification. |
 | [07 — Research roadmap](docs/07_research_roadmap.md) | Lộ trình có điều kiện GO / NO-GO. |
 | [08 — Tài liệu tham khảo](docs/08_references.md) | Nguồn hỗ trợ cho research contract. |
+| [Research state](docs/research_log.md) | Current validated state, decision summary, bottleneck và active research questions. |
+| [Data & corpus history](docs/research/data_and_corpus.md) | Evidence/history chi tiết về dữ liệu và corpus representation. |
+| [LegalIR retrieval history](docs/research/legalir_retrieval.md) | Evidence/history chi tiết về candidate retrieval. |
+| [LegalIR reranking history](docs/research/legalir_reranking.md) | Evidence/history chi tiết về cross-encoder và final ranking. |
 
 Canonical corpus tạo nền tảng cho LegalIR và evidence-grounded LegalQA. QA0 closed-book, và gold-evidence oracle khi mapping đã được verify, có thể chạy theo dependency riêng.
+
+`docs/research_log.md` là current-state index ngắn; các file trong `docs/research/` giữ detailed evidence và lịch sử theo research axis.
 
 ## Execution workflow
 
@@ -33,7 +39,9 @@ standalone offline Kaggle notebook
         ↓
 experiment result hoặc prediction JSON
         ↓
-evidence trong docs/research_log.md
+detailed evidence trong docs/research/
+        ↓
+current state/index trong docs/research_log.md
         ↓
 minimal submission packaging
 ```
@@ -42,13 +50,26 @@ minimal submission packaging
 
 `scoring/` là organizer-provided authority và không được refactor. Project-authored Python chỉ giới hạn ở utility đóng gói submission trong `tools/`; mọi implementation phục vụ preprocessing, retrieval, reranking, inference và experiment-level sanity checks phải nằm trực tiếp trong notebook.
 
-Để đóng gói một prediction JSON đã được notebook tạo:
+Với LegalIR Public Test, `public-official.json` là organizer input còn
+`submission.json` là participant prediction. Đây là hai file khác nhau. Codabench
+chỉ chấp nhận archive có đúng một root entry, không có directory nesting hay
+metadata sidecar:
 
 ```text
-python tools/package_submission.py path/to/<organizer_expected_filename>.json submission.zip
+submission.zip
+└── submission.json
 ```
 
-Tên JSON phải lấy từ sample submission hoặc phase instructions chính thức; utility giữ nguyên basename và đặt file trực tiếp ở root của ZIP.
+Đóng gói prediction đã được notebook tạo và kiểm tra exact sample-ID coverage
+theo official phase input bằng lệnh:
+
+```text
+python tools/package_submission.py path/to/prediction.json submission.zip --task legalir --expected-ids path/to/public-official.json
+```
+
+Utility không sửa prediction payload: nó validate strict LegalIR schema và đổi
+archive entry thành tên cố định `submission.json` bất kể basename của source JSON.
+Metadata audit phải để ngoài `submission.zip`.
 
 ## Đóng góp
 
