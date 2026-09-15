@@ -341,3 +341,120 @@ fixed character windows
 Notebook public inference tương ứng có trạng thái **Code present, not executed**.
 Không có public prediction hoặc Codabench result mới trong task đồng bộ này.
 
+## Supporting-evidence pool selection on fixed DEV
+
+**Date / status:** 2026-09-15 / completed DEV experiment; holdout not yet run.
+
+### Research question
+
+Với cùng exact dense top-100 candidate documents và cùng frozen cross-encoder,
+việc cho CE xem nhiều dense-retrieved supporting chunks hơn trong mỗi document
+có cải thiện final ranking không?
+
+Independent variable duy nhất là supporting-evidence pool size trước CE selection:
+`m = 2`, `m = 4`, hoặc `m = 8`. Với mỗi candidate document đã được cố định,
+`m` là tối đa top-m dense chunks/document lấy từ original fixed top-2.000 dense
+chunk pool. CE chấm độc lập mọi chunk hiện có trong prefix đó, chọn top 2 theo CE
+score, rồi lấy tổng top-2 CE scores làm document score. Document chỉ có một chunk
+thì score bằng CE score duy nhất đó. `m=2` tái tạo original current Dense→CE
+reference.
+
+### Fixed DEV controls
+
+- Split: fixed DEV 1.036 queries; source SHA-256 `c39cde9e74977e350f1456e7d487aafe67d2bcbaa4fa26fcabd557fe635635b7`; expected counts train/dev/holdout lần lượt là 4.941/1.036/1.023.
+- Corpus: 8.532 documents, 199.816 source-preserving fixed windows; `chunk_size=2000`, `overlap=200`, `step=1800`.
+- Dense retriever: `BAAI/bge-m3`, declared revision `5617a9f61b028005a4858fdac845db406aefb181`; top 2.000 chunks, sum top-2 dense chunk scores/document, rồi lấy 100 candidate documents.
+- Frozen CE: `BAAI/bge-reranker-v2-m3`, declared revision `953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e`; max sequence length 8.192, float16, batch size 128.
+- Final output: top 5 documents.
+- Không fusion, title enrichment hoặc article-aware chunking.
+
+### Candidate invariants
+
+Top-100 document IDs giống hệt nhau query-by-query giữa `m=2`, `m=4` và
+`m=8`. Candidate Recall@100 bằng `0.9819015444015444` cho cả ba variants.
+Vì candidate retrieval không đổi, mọi improvement ở final metrics trong
+comparison này đều xảy ra downstream of candidate retrieval.
+
+### DEV results
+
+`Precision` và `Recall` là bundled-scorer-compatible top-5 metrics. `MRR` và
+Recall@K là diagnostics trong fixed top-100 scope.
+
+| Variant | Precision | Recall | MRR | R@10 | R@20 | R@50 | R@100 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `m=2` control | 0.18416988416988417 | 0.8647039897039897 | 0.7291748808854571 | 0.9273648648648649 | 0.958976833976834 | 0.9767535392535394 | 0.9819015444015444 |
+| `m=4` | 0.1901544401544402 | 0.892052767052767 | 0.7565725191553766 | 0.9432110682110683 | 0.9605855855855857 | 0.9777187902187903 | 0.9819015444015444 |
+| `m=8` | 0.19150579150579153 | 0.8973616473616474 | 0.7622471799366903 | 0.9448198198198199 | 0.9634813384813385 | 0.9772361647361648 | 0.9819015444015444 |
+
+`m=2` reproduced the original Dense→CE control exactly.
+
+| Delta | Precision | Recall | MRR | R@10 | R@20 | R@50 | R@100 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `m=8 − m=2` | +0.00733590733590736 | +0.03265765765765771 | +0.03307229905123321 | +0.01745495495495497 | +0.0045045045045045695 | +0.0004826254826254539 | 0 |
+| `m=4 − m=2` | +0.0059845559845560226 | +0.027348777348777387 | +0.027397638269919478 | — | — | — | 0 |
+
+`m=8` Pareto-improves precision, recall và MRR so với `m=2`, đồng thời tốt hơn
+`m=4` trên cả ba metrics này. Vì vậy DEV-selected candidate là `m=8`; không mang
+`m=4` sang holdout.
+
+### Paired DEV evidence
+
+Với `m=8` so với `m=2`, per-query precision contribution và recall contribution
+đều có 50 queries improved, 973 unchanged và 13 worsened.
+
+Paired bootstrap dùng seed `20260913` và 10.000 resamples:
+
+| Metric | Observed delta | 95% percentile interval | Fraction delta > 0 |
+|---|---:|---:|---:|
+| Precision | +0.007335907335907337 | [0.00444015444015444, 0.010424710424710425] | 1.0 |
+| Recall | +0.03265765765765766 | [0.01866151866151866, 0.04681467181467181] | 1.0 |
+
+DEV evidence có direction rõ và materially stronger hơn earlier Dense-vs-BM25
+retriever substitution result, nơi cả hai bootstrap intervals chứa zero. Đây là
+paired-bootstrap evidence trên fixed DEV, không phải claim về statistical proof
+vượt quá protocol đó.
+
+### Evidence replacement diagnostic
+
+| Variant | Fraction candidate documents có CE top-2 khác dense top-2 | 0 replacements | 1 replacement | 2 replacements |
+|---|---:|---:|---:|---:|
+| `m=4` | 0.5997200772200773 | 41.469 | 55.648 | 6.483 |
+| `m=8` | 0.6875096525096525 | 32.374 | 53.658 | 17.568 |
+
+Dense chunk ranking hữu ích để retrieve support candidates, nhưng thường không
+đồng thuận với CE về hai chunks mạnh nhất cho document relevance. Diagnostic này
+hỗ trợ hypothesis rằng within-document evidence routing là một ranking bottleneck
+thực trên DEV; nó không cho thấy dense retrieval tự thân là kém.
+
+### Cost
+
+| Variant | CE pairs | Effective mean chunks/document |
+|---|---:|---:|
+| `m=2` | 207.167 | 1.999681467181467 |
+| `m=4` | 386.287 | 3.7286389961389963 |
+| `m=8` | 630.214 | 6.083146718146718 |
+
+`m=8` forward-equivalent CE time là `1436.4654506659876` seconds. Configuration
+này materially more expensive than `m=2`. Research decision hiện tại ưu tiên
+accuracy; runtime là một optimization axis riêng cho giai đoạn sau.
+
+### Decision and current status
+
+Current validated reference vẫn là Dense→CE với `m=2`:
+
+```text
+fixed windows 2000/200
+→ BGE-M3 dense top-2000 chunks
+→ sum top-2 dense scores/document
+→ top-100 documents
+→ top-2 dense supporting chunks/document
+→ frozen BGE-reranker-v2-m3
+→ sum both CE chunk scores
+→ top-5
+```
+
+`m=8` là **DEV-selected candidate awaiting fixed-local-holdout validation**. Nó
+chỉ thay evidence-pool policy: CE xem tối đa 8 dense support chunks rồi chọn top 2
+trước document aggregation. Không promote `m=8` thành validated reference cho đến
+khi aggregate fixed-local-holdout comparison thực sự được chạy và ghi nhận.
+

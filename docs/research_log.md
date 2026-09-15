@@ -30,6 +30,14 @@ Dense model có declared revision `5617a9f61b028005a4858fdac845db406aefb181`; re
 
 Dense→CE đã cải thiện cả precision và recall so với BM25→CE trên DEV và fixed local holdout, nên đây là current validated LegalIR reference.
 
+## Current DEV-selected candidate
+
+Dense→CE với `m=8` evidence pool: với mỗi fixed top-100 candidate document, CE
+chấm tối đa 8 chunks từ original dense top-2.000 chunk pool, chọn top 2 evidence
+chunks và sum hai CE scores trước final ranking. Configuration này cải thiện cả
+precision, recall và MRR so với `m=2` trên fixed DEV và đang chờ
+fixed-local-holdout validation. Current validated reference vẫn là `m=2`.
+
 ## Current observed bottleneck
 
 Candidate retrieval không còn là dominant observed bottleneck. Trên DEV, dense candidate coverage tăng chậm khi mở rộng document depth:
@@ -42,7 +50,10 @@ Candidate retrieval không còn là dominant observed bottleneck. Trên DEV, den
 | R@500 | 0.9929214929214928 |
 | Full unique-document pool induced by top-2000 dense chunk hits | 0.9942084942084942 |
 
-Current final DEV Recall@5 chỉ là `0.8647039897039897`. Đây là evidence-supported interpretation rằng ranking và evidence selection còn nhiều headroom hơn việc chỉ tăng document candidate depth; diagnostic này không phải absolute proof về mọi retrieval configuration.
+Supporting-evidence selection đã được xác nhận là một meaningful ranking
+bottleneck trên DEV: `m=8` cải thiện precision, recall và MRR trong khi giữ nguyên
+exact top-100 candidate documents. Residual ranking headroom vẫn còn sau `m=8`;
+đây là DEV evidence, không phải absolute proof về mọi retrieval configuration.
 
 ## Frozen decisions
 
@@ -58,11 +69,12 @@ Current final DEV Recall@5 chỉ là `0.8647039897039897`. Đây là evidence-su
 - **Article-aware representation:** chỉ giữ làm research candidate. Tín hiệu DEV là **small/mixed positive signal**: delta lần lượt là R@10 `-0.003056628056628208`, R@20 `+0.003619691119691182`, R@50 `-0.0001608751608751513`, R@100 `+0.0024131274131273805`, R@200 `-0.00024131274131278246`, và MRR `+0.011327197846623172`; số corpus chunks tăng từ `199816` lên `283260`. Không promote over fixed windows.
 - **Larger dense document candidate depth:** deprioritized, không bị coi là một hướng “failed”; observed marginal coverage gain nhỏ hơn remaining final-ranking gap.
 
-## Active research questions
+## Active validation
 
-Primary question hiện tại: **Dense→CE có mất ranking quality vì cross-encoder chỉ được xem hai chunks được dense retriever xếp cao nhất cho mỗi candidate document hay không?**
-
-Planned DEV experiment nằm trong [`dense_cross_encoder_supporting_evidence_dev.ipynb`](../notebooks/dense_cross_encoder_supporting_evidence_dev.ipynb). Nó giữ nguyên top-100 candidate documents và chỉ thay số dense supporting chunks được đưa vào frozen cross-encoder (`m = 2, 4, 8`). Notebook chưa được chạy; current validated reference chưa thay đổi.
+Supporting-evidence DEV experiment đã hoàn tất và chọn `m=8`. Standalone notebook
+[`dense_cross_encoder_supporting_evidence_holdout.ipynb`](../notebooks/dense_cross_encoder_supporting_evidence_holdout.ipynb)
+encode đúng một frozen comparison `m=2` vs `m=8` trên fixed local holdout. Notebook
+chưa được chạy; chưa có holdout result mới và `m=8` chưa được promote.
 
 ## Detailed research history
 
