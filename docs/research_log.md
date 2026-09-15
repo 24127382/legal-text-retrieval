@@ -811,3 +811,100 @@ Dense → CE chưa có returned result và chưa được coi là validated.
 ### Public inference note
 
 Một public-test inference notebook đã được execute cho current validated BM25 → CE system. Chưa ghi Codabench score, rank hoặc submission outcome vì chưa có submission result được cung cấp. Public test không thay thế methodology dựa trên DEV và fixed local holdout.
+
+## Dense retrieval before the frozen cross-encoder
+
+### Research question
+
+Khi giữ nguyên corpus representation, candidate depth, cross-encoder và final top-5, việc thay BM25 candidate retrieval bằng BGE-M3 dense retrieval có cải thiện final LegalIR performance không?
+
+Independent variable duy nhất là retriever family: BM25 so với BGE-M3.
+
+### Fixed DEV controls
+
+- Fixed DEV có 1.036 queries; source SHA-256 là `c39cde9e74977e350f1456e7d487aafe67d2bcbaa4fa26fcabd557fe635635b7`.
+- Corpus giữ nguyên 8.532 documents và 199.816 source-preserving character-window chunks với `chunk_size=2000`, `overlap=200`.
+- Cả hai retrievers lấy top 2.000 chunks, aggregate document bằng sum top-2 retriever chunk scores và giữ 100 candidate documents.
+- Mỗi candidate dùng tối đa hai supporting chunks do chính retriever đó cung cấp: BM25 candidate dùng top BM25 chunks, dense candidate dùng top dense chunks.
+- Frozen cross-encoder là `BAAI/bge-reranker-v2-m3`, declared revision `953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e`, max sequence length 8.192, float16, batch size 128.
+- CE document score là tổng của tối đa hai independent CE chunk scores; output cuối là top 5 documents.
+- Dense model là `BAAI/bge-m3`, declared revision `5617a9f61b028005a4858fdac845db406aefb181`, revision status `declared-offline-snapshot`.
+- Dense representation là L2-normalized CLS hidden state; similarity là dot product; không dùng query instruction.
+
+### Candidate retrieval results
+
+| Metric | BM25 | BGE-M3 | Dense minus BM25 |
+|---|---:|---:|---:|
+| Recall@10 | 0.8643018018018017 | 0.9227799227799228 | — |
+| Recall@20 | 0.9073359073359073 | 0.9497265122265123 | — |
+| Recall@50 | 0.938867438867439 | 0.9769144144144144 | — |
+| Recall@100 | 0.9573680823680824 | 0.9819015444015444 | +0.024533462033462072 |
+| Zero Recall@100 rate | 0.032818532818532815 | 0.013513513513513514 | — |
+| Full Recall@100 rate | 0.946911196911197 | 0.9768339768339769 | — |
+
+Candidate top-100 overlap có mean `42.50675675675676`, median `43`, p10 `24` và p90 `60`.
+
+### Final frozen-cross-encoder results
+
+| Metric | BM25→CE | Dense→CE | Dense→CE minus BM25→CE |
+|---|---:|---:|---:|
+| Bundled-scorer-compatible precision | 0.18127413127413128 | 0.18416988416988417 | +0.00289575289575289 |
+| Bundled-scorer-compatible recall | 0.8532818532818532 | 0.8647039897039897 | +0.011422136422136409 |
+| MRR within fixed top-100 scope | 0.7119943841541369 | 0.7291748808854571 | +0.01718049673132027 |
+| Recall@10 | 0.9037966537966537 | 0.9273648648648649 | +0.023568211068211165 |
+| Recall@20 | 0.9330759330759332 | 0.958976833976834 | +0.025900900900900803 |
+| Recall@50 | 0.9520592020592021 | 0.9767535392535394 | +0.024694337194337224 |
+| Recall@100 | 0.9573680823680824 | 0.9819015444015444 | +0.024533462033462072 |
+
+First-gold rank diagnostics:
+
+| First-gold rank | BM25→CE | Dense→CE |
+|---|---:|---:|
+| Rank 1 | 609 | 627 |
+| Rank 2–5 | 299 | 291 |
+| Rank 6–10 | 49 | 62 |
+| Rank 11–20 | 24 | 25 |
+| Rank 21–50 | 17 | 14 |
+| Rank 51–100 | 4 | 3 |
+| Not found | 34 | 14 |
+| Median when found | 1 | 1 |
+| p90 when found | 5 | 6 |
+| p95 when found | 10 | 9 |
+
+Ở final top-5, precision contribution và recall contribution đều có 64 queries improved, 923 unchanged và 49 worsened.
+
+### Paired DEV bootstrap
+
+Paired bootstrap dùng seed `20260913` và 10.000 resamples.
+
+| Metric | Observed delta | 95% percentile interval | Fraction delta > 0 |
+|---|---:|---:|---:|
+| Precision | +0.0028957528957528956 | [-0.0013513513513513512, +0.0071428571428571435] | 0.91 |
+| Recall | +0.011422136422136424 | [-0.006917631917631918, +0.03088803088803089] | 0.885 |
+
+Cả hai competition metrics đều cải thiện theo observed DEV point estimates, nhưng cả hai bootstrap intervals đều chứa zero. Evidence vì vậy positive nhưng materially weaker so với kết quả cross-encoder-vs-reference trước đó và không statistically decisive.
+
+### Coverage to final top-5
+
+| System | Candidate Recall@100 | Final Recall@5 | Remaining gap |
+|---|---:|---:|---:|
+| BM25→CE | 0.9573680823680824 | 0.8532818532818532 | 0.10408622908622911 |
+| Dense→CE | 0.9819015444015444 | 0.8647039897039897 | 0.11719755469755477 |
+
+Dense cải thiện candidate coverage đáng kể, nhưng frozen reranker chỉ chuyển một phần coverage bổ sung đó thành final top-5 recall. Đây là descriptive comparison, không phải strict causal decomposition.
+
+### Decision and current status
+
+Dense→CE cải thiện cả official-style precision và recall trên DEV và được chọn làm candidate tiếp theo cho fixed-local-holdout validation. Tuy nhiên, improvement còn modest và các DEV bootstrap intervals đều chứa zero, nên Dense→CE chưa thay thế validated BM25→CE reference.
+
+Current validated reference vẫn là:
+
+```text
+BM25
+→ sum-top-2
+→ top100
+→ frozen BGE reranker
+→ top5
+```
+
+Dense→CE status: **DEV-selected candidate awaiting fixed-local-holdout validation**.
