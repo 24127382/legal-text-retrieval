@@ -473,3 +473,43 @@ tạo bởi top-2.000 dense chunk hits.
 **Decision:** increasing document candidate depth is not the primary current
 bottleneck; ranking/evidence selection has substantially larger remaining
 headroom. Không chọn candidate depth mới từ diagnostic này.
+
+## Dense document aggregation under the current m8 CE stack
+
+**Date / status:** 2026-09-15 / completed fixed-DEV comparison.
+
+Independent variable duy nhất là dense chunk-score → document-score rule: `max_top1`, `sum_top2`, `mean_top2`, hoặc `sum_top3`. Fixed components gồm fixed windows `2000/200`, BGE-M3 top-2.000 chunks, candidate depth 100, `m=8`, frozen CE sum-top-2 và final top-5.
+
+Không alternative nào cải thiện đồng thời final precision và recall so với `sum_top2`. Một số alternatives tăng candidate Recall@100 nhưng vẫn giảm downstream CE metrics.
+
+**Decision:** retain dense `sum_top2` document aggregation và đóng các simple alternatives trong comparison này. Candidate Recall@100 không được tối ưu riêng khỏi final competition metrics.
+
+## Naive dense plus BM25 candidate union
+
+**Date / status:** 2026-09-15 / completed fixed-DEV comparison.
+
+Dense top-100 candidate Recall tăng từ `0.9819015444015444` lên `0.986003861003861` khi dùng uncapped union của dense top-100 và BM25 top-100. Với downstream `m=8` CE stack giữ cố định, union minus dense-only là precision `-0.0003861003861003742`, recall `-0.0009652509652509078`, MRR `-0.0012675961892197884`.
+
+**Decision:** reject naive uncapped `dense-top100 ∪ BM25-top100` dưới current CE stack. Đây chỉ là decision về formulation union đơn giản này, không phải kết luận BM25 universally không có giá trị.
+
+## Candidate depth with fixed m8 downstream ranking
+
+**Date / status:** 2026-09-15 / DEV selection completed; frozen candidate awaiting holdout.
+
+Control, independent variable, fixed components và decision rule:
+
+- Control: candidate depth 100.
+- Independent variable: số dense-ranked candidate documents được chuyển sang CE.
+- Fixed: windows `2000/200`, BGE-M3 top-2.000 chunks, dense sum-top-2, support pool `m=8` từ global top-2.000, CE select top-2/sum-top-2, final top-5.
+- Decision rule của batch: chọn một depth có final accuracy tốt hơn và chi phí thấp hơn; không refine thêm depth trong task kế tiếp.
+
+| Depth | Candidate recall | Precision | Recall | MRR | CE pairs |
+|---:|---:|---:|---:|---:|---:|
+| 50 | 0.9769144144144144 | 0.1924710424710425 | 0.9021879021879021 | 0.7631376822782663 | 353791 |
+| 100 | 0.9819015444015444 | 0.19150579150579153 | 0.8973616473616474 | 0.7622471799366903 | 630214 |
+
+Depth 50 minus depth 100: precision `+0.0009652509652509633`, recall `+0.004826254826254761`, MRR `+0.0008905023415759494`; CE pairs giảm khoảng `43.86%`. Candidates ranks 51–100 nâng candidate ceiling nhưng thêm distractors đủ để final top-5 giảm nhẹ.
+
+**Decision:** `candidate_depth=50` là current DEV-selected candidate awaiting fixed-local-holdout validation. Không promote, không tune 25/40/60/75, và public inference vẫn dùng depth 100.
+
+Holdout decision rule đã freeze: promote depth 50 chỉ khi recall holdout lớn hơn depth 100 và precision không materially regress; nếu recall tie thì dùng precision; nếu recall giảm thì giữ depth 100 bất kể compute saving.

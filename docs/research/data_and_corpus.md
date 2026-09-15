@@ -205,3 +205,28 @@ Depth-wise article-aware minus fixed-window deltas:
 **Decision:** small/mixed positive signal; không promote article-aware
 representation over fixed windows và không gọi đây là clear winner.
 
+## Downstream decision for article-aware representation
+
+**Date / status:** 2026-09-15 / completed controlled Dense→CE DEV experiment.
+
+Control và article-aware arm giữ cùng BGE-M3, dense top-2.000 chunks, dense sum-top-2 aggregation, candidate depth 100, `m=8` evidence routing, CE sum-top-2 và final top-5. Independent variable duy nhất là corpus representation.
+
+Article-aware retrieval tăng candidate Recall@100 `+0.0024131274131273805` và dense MRR `+0.011342758171717371`, nhưng downstream final metrics giảm: precision `-0.0019305019305019544`, recall `-0.009974259974260047`, MRR `-0.006092062131861975` so với fixed-window control.
+
+**Decision:** reject article-aware representation cho current Dense→CE stack và loại khỏi active queue. Kết quả retrieval dương nhẹ được giữ làm historical evidence: candidate coverage tốt hơn một mình không bảo đảm final ranking tốt hơn.
+
+## Fixed-window size diagnostic on fixed DEV
+
+**Date / status:** 2026-09-15 / dense-only selection diagnostic completed.
+
+Các arms đều là source-preserving character windows với exact provenance `chunk_text == source[char_start:char_end]`. BGE-M3, top-2.000 chunks và dense sum-top-2 document aggregation được giữ cố định.
+
+| Representation | Chunks | R@10 | R@20 | R@50 | R@100 | R@200 | MRR |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `2000/200` control | 199816 | 0.9227799227799228 | 0.9497265122265123 | 0.9769144144144144 | 0.9819015444015444 | 0.9877734877734878 | 0.715947891848147 |
+| `1000/100` | 396276 | 0.9268018018018017 | 0.9522200772200772 | 0.9761100386100386 | 0.9862451737451737 | 0.9892213642213642 | 0.7249926686990248 |
+
+`1000/100 − 2000/200`: R@10 `+0.004021879021878894`, R@20 `+0.0024935649935649007`, R@50 `-0.0008043758043757565`, R@100 `+0.004343629343629307`, R@200 `+0.0014478764478763617`, MRR `+0.00904477685087779`.
+
+`3000/300` giảm rõ rệt overall và bị reject. `1000/100` chỉ được promote sang downstream Dense→CE DEV evaluation với cùng candidate-100, `m=8`, CE sum-top-2 và top-5; nó chưa phải validated representation.
+

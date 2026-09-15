@@ -458,3 +458,61 @@ chỉ thay evidence-pool policy: CE xem tối đa 8 dense support chunks rồi c
 trước document aggregation. Không promote `m=8` thành validated reference cho đến
 khi aggregate fixed-local-holdout comparison thực sự được chạy và ghi nhận.
 
+## Fixed-local-holdout validation of m8 supporting evidence
+
+**Date / status:** 2026-09-15 / completed aggregate-only frozen validation; promoted.
+
+### Frozen comparison
+
+`m=2` là previous validated control; `m=8` là configuration đã được chọn trước trên DEV. Cả hai dùng cùng fixed windows `2000/200`, BGE-M3 top-2.000 chunks, dense sum-top-2, exact top-100 candidate documents, frozen BGE reranker, CE select top-2/sum-top-2, deterministic ties và final top-5. Holdout gồm 1.023 queries từ source SHA-256 `c39cde9e74977e350f1456e7d487aafe67d2bcbaa4fa26fcabd557fe635635b7`; output chỉ chứa aggregate evidence.
+
+| Variant | Precision | Recall | MRR | Candidate R@100 |
+|---|---:|---:|---:|---:|
+| Superseded validated `m=2` | 0.18338220918866083 | 0.8659986966438579 | 0.7299178380421532 | 0.9757249918540242 |
+| Frozen DEV-selected `m=8` | 0.1884652981427175 | 0.8888074291300098 | 0.7582601128237376 | 0.9757249918540242 |
+
+`m=8 − m=2`: precision `+0.00508308895405668`, recall `+0.022808732486151895`, MRR `+0.028342274781584464`, R@10 `+0.009449332029976998`, R@20 `+0.0067611599869663586`, R@50 `+0.0004887585532746819`, R@100 `0`. Candidate documents giống hệt nhau.
+
+### Decision
+
+The DEV-selected `m=8` supporting-evidence policy generalizes directionally on the fixed local holdout. Promote `m=8` thành current validated LegalIR reference; giữ `m=2` làm superseded validated reference trong historical record.
+
+Current pipeline:
+
+```text
+fixed windows 2000/200
+→ BAAI/bge-m3 → dense top-2000 chunks
+→ document score = sum top-2 dense chunk scores
+→ top-100 candidate documents
+→ up to top-8 dense chunks/document from occurrences in the original global top-2000 pool
+→ BAAI/bge-reranker-v2-m3 scores all available supports independently
+→ select top-2 chunks by CE score
+→ document CE score = sum top-2 CE scores
+→ CE score desc, original dense rank asc, document_id asc
+→ final top-5
+```
+
+## CE document aggregation comparison
+
+**Date / status:** 2026-09-15 / completed fixed-DEV comparison.
+
+Independent variable duy nhất là CE chunk-score → document-score aggregation: `max_top1`, `sum_top2`, `mean_top2`, hoặc `sum_top3`. Current `sum_top2` đạt precision `0.19150579150579153`, recall `0.8973616473616474`, MRR `0.7622471799366903`; không alternative nào cải thiện. `mean_top2` tạo chính xác cùng ranking và metrics với `sum_top2` trong experiment này.
+
+**Decision:** retain CE `sum_top2`; không pursue các simple alternatives này thêm.
+
+## Full-document supporting-evidence search
+
+**Date / status:** 2026-09-15 / completed fixed-DEV comparison.
+
+Candidate documents giống hệt control. Support sets thay đổi ở fraction `0.5016216216216216` candidate documents; `45595` candidate documents có dưới 8 supports trong global top-2.000 pool nhưng có ít nhất 8 dưới full-document search. Dù vậy, full-document minus global-pool control là precision `-0.00019305019305021487`, recall `-0.00024131274131278246`, MRR `-2.9898757534230214e-06`.
+
+**Decision:** không mở support search sang mọi chunk trong candidate document. Global dense top-2.000 pool đang hoạt động như evidence prefilter hữu ích; thiếu additional within-document chunks chưa phải meaningful bottleneck.
+
+## CE title-context signal and confirmation gate
+
+**Date / status:** 2026-09-15 / promising initial DEV result; not selected for holdout.
+
+Candidates và `m=8` support chunks giống hệt nhau giữa hai arms. Independent variable duy nhất là CE input: control `(question, raw_chunk)`; candidate `(question, document_name + "\n" + raw_chunk)` khi `name` non-empty, nếu không giữ raw chunk. Không thêm label. Raw control đạt precision `0.19150579150579153`, recall `0.8973616473616474`, MRR `0.7622471799366903`; title context đạt `0.1922779922779923`, `0.9017052767052767`, `0.7663256982389692`. Delta lần lượt là `+0.0007722007722007762`, `+0.004343629343629307`, `+0.0040785183022788996`; không có truncation.
+
+Completed notebook chưa có paired bootstrap, nên evidence hiện tại chỉ **promising but not yet selected for holdout**. Confirmation DEV phải report per-query improved/unchanged/worsened và paired bootstrap 10.000 resamples với seed `20260913`. Chỉ chọn cho holdout nếu observed precision và recall đều tăng, đồng thời cả hai 95% percentile intervals nằm hoàn toàn phía trên zero.
+
