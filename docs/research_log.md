@@ -21,6 +21,19 @@ fixed source-preserving windows: chunk_size=2000, overlap=200, step=1800
 
 Best observed public score: `0.8935`. Tie-break: CE document score descending, original dense document rank ascending, rồi `document_id` ascending. Dense revision được khai báo là `5617a9f61b028005a4858fdac845db406aefb181`; reranker revision là `953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e`. Cả hai chạy từ local snapshot với `local_files_only=True`.
 
+## Final-window focused research queue
+
+Mọi neural checkpoint mới phải thỏa hard competition gate `parameter_count < 4_000_000_000` trước khi evaluation; notebook ghi actual loaded parameter count và dừng ngay nếu không đủ điều kiện. Đây là eligibility rule, không phải research axis.
+
+Queue hiện chỉ giữ bốn high-upside questions và sáu standalone fixed-DEV notebooks:
+
+1. Proper fixed-budget chunk fusion có phục hồi lexical signal mà naive uncapped document union đã làm mất không? So dense-only với equal-weight BM25+BGE RRF (`k=60`) và equal-weight per-query normalized-score fusion trong `bm25_bge_hybrid_fusion_dev.ipynb`.
+2. Retrieval-only signal của fixed windows `2000/500` có sống qua frozen `candidate100 → m8 → CE top2/sum-top2` không? Kiểm tra trong `fixed_window_overlap500_cross_encoder_dev.ipynb`.
+3. Retriever diversity có phục hồi BGE-M3 misses không? Đo GTE dense riêng, BGE+GTE chunk RRF downstream, và Jina ColBERT v2-64 late interaction trong ba notebook tương ứng; chưa tạo three-way hay second-stage combination.
+4. Frozen BGE reranker có trở thành bottleneck không? So cùng exact candidate/support pairs với GTE multilingual reranker trong `gte_multilingual_reranker_dev.ipynb`.
+
+Thứ tự execution: chạy ngay BM25+BGE fusion và overlap500 downstream; sau GTE dense upload chạy song song GTE retrieval và BGE+GTE hybrid; sau GTE reranker upload chạy reranker challenger; sau Jina upload chạy late-interaction challenger. Không notebook nào tự động đi vào holdout hoặc public inference.
+
 ## Compute-efficient validated alternative
 
 Dense→CE `m=8` / candidate depth 50 giữ nguyên toàn bộ stack trên và chỉ giảm candidate depth từ 100 xuống 50. Fixed-local-holdout metrics: precision `0.1884652981427175`, recall `0.8894591072010427`, MRR `0.7584082641848077`; CE pairs `348153`, giảm `0.43841127329448026` (khoảng `43.84%`) so với depth 100. Public score là `0.8915`.

@@ -1,5 +1,11 @@
 # 02 — Không gian phương pháp
 
+## Competition eligibility gate: model phải nhỏ hơn 4B tham số
+
+Giới hạn `parameter_count < 4_000_000_000` là hard competition eligibility constraint, không phải ablation, preference hay optimization target. Bất kỳ neural checkpoint nào được dùng cho retrieval, reranking, generation, query transformation, teacher/student training hoặc vai trò model khác trong competition đều phải qua gate này trước khi đi vào executable method space.
+
+Mỗi experiment dùng model mới phải ghi repository/name, declared và resolved snapshot revision, local path, `local_files_only`, `trust_remote_code` và actual loaded parameter count tính bằng `sum(p.numel() for p in model.parameters())`. Notebook phải dừng ngay nếu count lớn hơn hoặc bằng `4_000_000_000`; quantization hay memory footprint không thay đổi parameter-count eligibility.
+
 ## Cách đọc taxonomy
 
 **Corpus representation** quyết định evidence unit nào tồn tại; **candidate retrieval** tạo candidate pool rộng; **fusion** hợp nhất nhiều rank/score; **reranking** chấm lại một pool nhỏ; **final selection** quyết định output. Chi phí: `L` thấp, `M` vừa, `H` cao, `VH` rất cao. Priority là thứ tự nghiên cứu tương đối, không phải dự đoán chắc chắn về gain. `Code present` chỉ ghi nhận implementation/prototype quan sát được; không đồng nghĩa `Validated` hoặc `Benchmarked`.
