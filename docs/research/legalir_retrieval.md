@@ -494,14 +494,14 @@ Dense top-100 candidate Recall tăng từ `0.9819015444015444` lên `0.986003861
 
 ## Candidate depth with fixed m8 downstream ranking
 
-**Date / status:** 2026-09-15 / DEV selection completed; frozen candidate awaiting holdout.
+**Date / status:** 2026-09-16 / DEV selection and aggregate-only fixed-local-holdout validation completed; promoted.
 
 Control, independent variable, fixed components và decision rule:
 
 - Control: candidate depth 100.
 - Independent variable: số dense-ranked candidate documents được chuyển sang CE.
 - Fixed: windows `2000/200`, BGE-M3 top-2.000 chunks, dense sum-top-2, support pool `m=8` từ global top-2.000, CE select top-2/sum-top-2, final top-5.
-- Decision rule của batch: chọn một depth có final accuracy tốt hơn và chi phí thấp hơn; không refine thêm depth trong task kế tiếp.
+- Frozen holdout decision rule: promote depth 50 if holdout recall improves and precision does not regress.
 
 | Depth | Candidate recall | Precision | Recall | MRR | CE pairs |
 |---:|---:|---:|---:|---:|---:|
@@ -510,6 +510,27 @@ Control, independent variable, fixed components và decision rule:
 
 Depth 50 minus depth 100: precision `+0.0009652509652509633`, recall `+0.004826254826254761`, MRR `+0.0008905023415759494`; CE pairs giảm khoảng `43.86%`. Candidates ranks 51–100 nâng candidate ceiling nhưng thêm distractors đủ để final top-5 giảm nhẹ.
 
-**Decision:** `candidate_depth=50` là current DEV-selected candidate awaiting fixed-local-holdout validation. Không promote, không tune 25/40/60/75, và public inference vẫn dùng depth 100.
+### Fixed-local-holdout validation
 
-Holdout decision rule đã freeze: promote depth 50 chỉ khi recall holdout lớn hơn depth 100 và precision không materially regress; nếu recall tie thì dùng precision; nếu recall giảm thì giữ depth 100 bất kể compute saving.
+Hai arms chạy trên cùng fixed local holdout 1.023 queries từ source SHA-256 `c39cde9e74977e350f1456e7d487aafe67d2bcbaa4fa26fcabd557fe635635b7`. Control depth 100 được validate trước khi interpretation depth 50; không inspect holdout samples.
+
+| Variant | Candidate recall | Precision | Recall | MRR | CE pairs |
+|---|---:|---:|---:|---:|---:|
+| Validated control depth 100 | 0.9757249918540242 | 0.1884652981427175 | 0.8888074291300098 | 0.7582601128237376 | 619943 |
+| Frozen DEV-selected depth 50 | 0.9679048550016293 | 0.1884652981427175 | 0.8894591072010427 | 0.7584082641848077 | 348153 |
+
+Depth 50 minus depth 100: precision `0.0`, recall `+0.0006516780710329462`, MRR `+0.000148151361070048`, candidate coverage `-0.00782013685239491`, CE pairs `-271790`, CE-pair reduction fraction `0.43841127329448026`.
+
+**Decision:** frozen rule được thỏa; promote `candidate_depth=50` thành current validated reference. Accuracy decision được áp dụng trước; khoảng `43.84%` CE-pair reduction là secondary compute benefit. Depth 100 trở thành superseded validated reference và historical result được giữ nguyên.
+
+## Fixed windows 1000/100 under the downstream m8 CE stack
+
+**Date / status:** 2026-09-16 / fixed-DEV downstream evaluation completed; not selected for holdout.
+
+Dense-only selection diagnostic so sánh source-preserving `2000/200` control với `1000/100`, giữ BGE-M3, top-2.000 chunks và dense sum-top-2 cố định. `1000/100` tạo `396276` chunks và cho dense deltas: R@10 `+0.004021879021878894`, R@20 `+0.0024935649935649007`, R@50 `-0.0008043758043757565`, R@100 `+0.004343629343629307`, R@200 `+0.0014478764478763617`, MRR `+0.00904477685087779`.
+
+Downstream confirmation giữ candidate depth 100, `m=8`, raw-chunk CE input, CE select top-2/sum-top-2 và final top-5. `1000/100 − 2000/200` cho final precision `+0.0001930501930501871`, recall `+0.002734877734877683`, MRR `-0.012788973520880154`; ranking deltas R@10 `-0.0011261261261262812`, R@20 `+0.003700128700128591`, R@50 `+0.0033783783783783994`, R@100 `+0.004343629343629307`.
+
+Paired bootstrap 95% intervals của final delta là precision `[-0.002702702702702703, +0.003088803088803089]` và recall `[-0.009974259974259972, +0.015283140283140284]`; cả hai chứa zero.
+
+**Decision:** `1000/100` có positive dense-retrieval signal nhưng weak/mixed downstream CE evidence. Không đưa sang holdout; giữ validated representation là `2000/200`. Kết luận này chỉ áp dụng cho current downstream stack, không khẳng định `1000/100` theoretically invalid. `3000/300` vẫn rejected/deprioritized theo prior evidence.

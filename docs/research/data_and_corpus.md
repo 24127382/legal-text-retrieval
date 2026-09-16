@@ -228,5 +228,5 @@ Các arms đều là source-preserving character windows với exact provenance 
 
 `1000/100 − 2000/200`: R@10 `+0.004021879021878894`, R@20 `+0.0024935649935649007`, R@50 `-0.0008043758043757565`, R@100 `+0.004343629343629307`, R@200 `+0.0014478764478763617`, MRR `+0.00904477685087779`.
 
-`3000/300` giảm rõ rệt overall và bị reject. `1000/100` chỉ được promote sang downstream Dense→CE DEV evaluation với cùng candidate-100, `m=8`, CE sum-top-2 và top-5; nó chưa phải validated representation.
+`3000/300` giảm rõ rệt overall và bị reject. `1000/100` được promote sang downstream Dense→CE DEV evaluation với cùng candidate-100, `m=8`, CE sum-top-2 và top-5; evaluation sau đó cho weak/mixed downstream evidence và không chọn cho holdout. Validated representation vẫn là `2000/200`; xem [`legalir_retrieval.md`](legalir_retrieval.md#fixed-windows-1000100-under-the-downstream-m8-ce-stack).
 

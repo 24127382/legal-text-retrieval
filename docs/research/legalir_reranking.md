@@ -477,7 +477,7 @@ khi aggregate fixed-local-holdout comparison thực sự được chạy và ghi
 
 The DEV-selected `m=8` supporting-evidence policy generalizes directionally on the fixed local holdout. Promote `m=8` thành current validated LegalIR reference; giữ `m=2` làm superseded validated reference trong historical record.
 
-Current pipeline:
+Current pipeline tại thời điểm promote `m=8` (sau đó superseded trên candidate-depth axis):
 
 ```text
 fixed windows 2000/200
@@ -510,9 +510,30 @@ Candidate documents giống hệt control. Support sets thay đổi ở fraction
 
 ## CE title-context signal and confirmation gate
 
-**Date / status:** 2026-09-15 / promising initial DEV result; not selected for holdout.
+**Date / status:** 2026-09-16 / initial result and fixed-DEV confirmation completed; closed/deprioritized without holdout.
 
 Candidates và `m=8` support chunks giống hệt nhau giữa hai arms. Independent variable duy nhất là CE input: control `(question, raw_chunk)`; candidate `(question, document_name + "\n" + raw_chunk)` khi `name` non-empty, nếu không giữ raw chunk. Không thêm label. Raw control đạt precision `0.19150579150579153`, recall `0.8973616473616474`, MRR `0.7622471799366903`; title context đạt `0.1922779922779923`, `0.9017052767052767`, `0.7663256982389692`. Delta lần lượt là `+0.0007722007722007762`, `+0.004343629343629307`, `+0.0040785183022788996`; không có truncation.
 
-Completed notebook chưa có paired bootstrap, nên evidence hiện tại chỉ **promising but not yet selected for holdout**. Confirmation DEV phải report per-query improved/unchanged/worsened và paired bootstrap 10.000 resamples với seed `20260913`. Chỉ chọn cho holdout nếu observed precision và recall đều tăng, đồng thời cả hai 95% percentile intervals nằm hoàn toàn phía trên zero.
+### Confirmation and paired evidence
+
+Confirmation trên cùng fixed DEV 1.036 queries giữ candidate IDs, support indices, reranker và downstream controls giống hệt nhau. Raw control vẫn đạt precision `0.19150579150579153`, recall `0.8973616473616474`, MRR `0.7622471799366903`; title context đạt `0.1922779922779923`, `0.9017052767052767`, `0.7663256982389692`. Observed deltas là precision `+0.0007722007722007762`, recall `+0.004343629343629307`, MRR `+0.0040785183022788996`.
+
+Paired behavior: `11` queries improved, `1018` unchanged, `7` worsened. Paired-bootstrap 95% intervals là precision `[-0.0007722007722007722, +0.002316602316602317]` và recall `[-0.002413127413127413, +0.011583011583011582]`; cả hai chứa zero.
+
+**Decision:** simple document-name prepend at CE input stage showed a small positive point estimate, but paired-bootstrap uncertainty included zero; it is not selected for further holdout validation. Đây là weak/mixed positive DEV signal: đóng/deprioritize hướng này cho current stack, không gọi nó là universally rejected. Current validated reference tiếp tục dùng raw chunk CE input.
+
+## Candidate-depth fixed-local-holdout validation under m8
+
+**Date / status:** 2026-09-16 / completed aggregate-only frozen validation; depth 50 promoted.
+
+Depth 100 là validated control; depth 50 là frozen DEV-selected candidate. Cả hai dùng cùng fixed source-preserving windows `2000/200` (step `1800`), BGE-M3 top-2.000 chunks, dense sum-top-2, `m=8` supports từ original global top-2.000 pool, raw-chunk CE input, CE select top-2/sum-top-2, deterministic ties và final top-5. Fixed local holdout gồm 1.023 queries từ source SHA-256 `c39cde9e74977e350f1456e7d487aafe67d2bcbaa4fa26fcabd557fe635635b7`.
+
+| Variant | Candidate recall | Precision | Recall | MRR | CE pairs |
+|---|---:|---:|---:|---:|---:|
+| `m=8`, depth 100 control | 0.9757249918540242 | 0.1884652981427175 | 0.8888074291300098 | 0.7582601128237376 | 619943 |
+| `m=8`, depth 50 | 0.9679048550016293 | 0.1884652981427175 | 0.8894591072010427 | 0.7584082641848077 | 348153 |
+
+Depth 50 minus depth 100: precision `0.0`, recall `+0.0006516780710329462`, MRR `+0.000148151361070048`, candidate coverage `-0.00782013685239491`; CE pairs giảm `271790`, fraction `0.43841127329448026`.
+
+Frozen rule “Promote depth50 if holdout recall improves and precision does not regress” được thỏa. **Decision:** promote Dense→CE `m=8` / depth 50 thành current validated reference; Dense→CE `m=8` / depth 100 trở thành superseded validated reference. Khoảng `43.84%` compute reduction là secondary benefit, không phải promotion criterion.
 
