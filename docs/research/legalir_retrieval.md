@@ -494,7 +494,7 @@ Dense top-100 candidate Recall tăng từ `0.9819015444015444` lên `0.986003861
 
 ## Candidate depth with fixed m8 downstream ranking
 
-**Date / status:** 2026-09-16 / DEV selection and aggregate-only fixed-local-holdout validation completed; promoted.
+**Date / status:** 2026-09-16 / DEV selection and aggregate-only fixed-local-holdout validation completed; later public evidence restores depth 100 as the public-score reference.
 
 Control, independent variable, fixed components và decision rule:
 
@@ -521,7 +521,9 @@ Hai arms chạy trên cùng fixed local holdout 1.023 queries từ source SHA-25
 
 Depth 50 minus depth 100: precision `0.0`, recall `+0.0006516780710329462`, MRR `+0.000148151361070048`, candidate coverage `-0.00782013685239491`, CE pairs `-271790`, CE-pair reduction fraction `0.43841127329448026`.
 
-**Decision:** frozen rule được thỏa; promote `candidate_depth=50` thành current validated reference. Accuracy decision được áp dụng trước; khoảng `43.84%` CE-pair reduction là secondary compute benefit. Depth 100 trở thành superseded validated reference và historical result được giữ nguyên.
+**Holdout decision:** frozen rule được thỏa. `candidate_depth=50` remains the fixed-local-holdout-validated compute-efficient variant; khoảng `43.84%` CE-pair reduction là secondary compute benefit. Kết quả này không bị rewrite hoặc gọi là failed experiment.
+
+**Public evidence update:** public score của `m=8`, depth 100 là `0.8935`; public score của cùng stack ở depth 50 là `0.8915`. Vì public evidence có small negative movement khi 100→50, depth 100 được đặt lại làm current public-score / public-inference reference. Public leaderboard là external/public-test evidence, không phải DEV selection evidence. Candidate-depth tuning axis đóng tại 50/100: không test 60/70/80/90 dựa trên public feedback.
 
 ## Fixed windows 1000/100 under the downstream m8 CE stack
 

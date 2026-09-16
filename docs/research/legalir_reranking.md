@@ -524,7 +524,7 @@ Paired behavior: `11` queries improved, `1018` unchanged, `7` worsened. Paired-b
 
 ## Candidate-depth fixed-local-holdout validation under m8
 
-**Date / status:** 2026-09-16 / completed aggregate-only frozen validation; depth 50 promoted.
+**Date / status:** 2026-09-16 / completed aggregate-only frozen validation; depth 50 validated as the compute-efficient variant. Later public evidence restores depth 100 as the public-score reference.
 
 Depth 100 là validated control; depth 50 là frozen DEV-selected candidate. Cả hai dùng cùng fixed source-preserving windows `2000/200` (step `1800`), BGE-M3 top-2.000 chunks, dense sum-top-2, `m=8` supports từ original global top-2.000 pool, raw-chunk CE input, CE select top-2/sum-top-2, deterministic ties và final top-5. Fixed local holdout gồm 1.023 queries từ source SHA-256 `c39cde9e74977e350f1456e7d487aafe67d2bcbaa4fa26fcabd557fe635635b7`.
 
@@ -535,5 +535,22 @@ Depth 100 là validated control; depth 50 là frozen DEV-selected candidate. C�
 
 Depth 50 minus depth 100: precision `0.0`, recall `+0.0006516780710329462`, MRR `+0.000148151361070048`, candidate coverage `-0.00782013685239491`; CE pairs giảm `271790`, fraction `0.43841127329448026`.
 
-Frozen rule “Promote depth50 if holdout recall improves and precision does not regress” được thỏa. **Decision:** promote Dense→CE `m=8` / depth 50 thành current validated reference; Dense→CE `m=8` / depth 100 trở thành superseded validated reference. Khoảng `43.84%` compute reduction là secondary benefit, không phải promotion criterion.
+Frozen rule “Promote depth50 if holdout recall improves and precision does not regress” được thỏa. Kết luận holdout tại thời điểm đó vẫn được giữ nguyên: depth 50 là **fixed-local-holdout-validated compute-efficient variant**, không phải failed experiment. Khoảng `43.84%` CE-pair reduction là secondary benefit, không phải promotion criterion. Sau khi quan sát public score `0.8935` cho depth 100 và `0.8915` cho depth 50, depth 100 được đặt lại làm **current public-score / public-inference reference**; hai loại evidence được giữ riêng, không rewrite history.
+
+## Public submission evidence and current public reference
+
+**Date / status:** 2026-09-16 / four public submissions recorded from user-provided scores; implementations reconstructed from Git history.
+
+| Submission | Public score | Reconstructed method | Git evidence |
+|---|---:|---|---|
+| S1 | `0.8530` | fixed `2000/200` → BM25 Lucene top-2000 chunks → BM25 sum-top-2/document → candidate 100 → top-2 BM25 supports/document → BGE reranker → CE sum-up-to-2 → top-5 | `6003e172222e00e62adb63fa3c30ed4388324a5c` |
+| S2 | `0.8685` | fixed `2000/200` → BGE-M3 top-2000 → dense sum-top-2/document → candidate 100 → `m=2` dense supports → CE sum-top-2 → top-5 | `d36aec7f7140f0caef554647aee9d11afcac3b3b` |
+| S3 | `0.8935` | same dense stack → candidate 100 → `m=8` supports from original global top-2000 → CE selects top-2 → sum-top-2 → top-5 | `b1d66e42e16e75907c52d0d31e93f2539bba6cf4` |
+| S4 | `0.8915` | same as S3, with candidate depth `100 → 50` as the only major method change | `083c50d17bb7cba5f9fba7c2e0077927606a3901` |
+
+Git xác nhận các configuration/method transitions trên; public scores là external evidence được user cung cấp. Sequence hỗ trợ clear positive public movement từ BM25→Dense và `m=2`→`m=8`, rồi small negative public movement từ depth 100→50. Không claim score differences isolate causal effects hoàn hảo ngoài những controlled method changes này.
+
+The public leaderboard has now been observed for four submissions. It is treated as external evidence, not as a hyperparameter search surface. Candidate-depth tuning axis được đóng: không test depth 60/70/80/90 dựa trên leaderboard feedback; không dùng public score để tune fusion weights, chunk parameters hoặc submit mọi DEV variant.
+
+**Current public-inference / public-score reference:** fixed `2000/200` → BGE-M3 top-2000 → dense sum-top-2 → candidate 100 → `m=8` → CE select top-2/sum-top-2 → deterministic top-5, best observed public score `0.8935`. Depth 50 giữ status fixed-local-holdout-validated compute-efficient alternative, public score `0.8915`.
 

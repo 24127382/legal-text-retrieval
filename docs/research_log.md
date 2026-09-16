@@ -2,15 +2,15 @@
 
 Tài liệu này chỉ giữ current state, decisions và active questions. Evidence và lịch sử đầy đủ được giữ theo research axis trong [`docs/research/`](research/).
 
-Fixed DEV là split duy nhất dùng cho selection, tuning và sample-level diagnostics. Fixed local holdout chỉ dùng aggregate validation cho configuration đã freeze; đây không phải official competition test.
+Fixed DEV là split duy nhất dùng cho selection, tuning và sample-level diagnostics. Fixed local holdout chỉ dùng aggregate validation cho configuration đã freeze. Public leaderboard là external/public-test evidence, không phải DEV hay hyperparameter-search surface.
 
-## Current validated LegalIR reference
+## Current public-inference / public-score reference
 
 ```text
 fixed source-preserving windows: chunk_size=2000, overlap=200, step=1800
 → BAAI/bge-m3 dense top-2000 chunks
 → sum top-2 dense chunk scores/document
-→ top-50 candidate documents
+→ top-100 candidate documents
 → up to top-8 dense chunks/document from the original global top-2000 pool
 → BAAI/bge-reranker-v2-m3 scores every available support independently
 → select top-2 chunks by CE score
@@ -19,33 +19,50 @@ fixed source-preserving windows: chunk_size=2000, overlap=200, step=1800
 → top-5 unique document IDs
 ```
 
-Tie-break: CE document score descending, original dense document rank ascending, rồi `document_id` ascending. Dense revision được khai báo là `5617a9f61b028005a4858fdac845db406aefb181`; reranker revision là `953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e`. Cả hai chạy từ local snapshot với `local_files_only=True`.
+Best observed public score: `0.8935`. Tie-break: CE document score descending, original dense document rank ascending, rồi `document_id` ascending. Dense revision được khai báo là `5617a9f61b028005a4858fdac845db406aefb181`; reranker revision là `953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e`. Cả hai chạy từ local snapshot với `local_files_only=True`.
 
-Fixed-local-holdout metrics: precision `0.1884652981427175`, recall `0.8894591072010427`, MRR `0.7584082641848077`; dense candidate Recall@50 `0.9679048550016293`. Depth 50 thỏa frozen accuracy decision rule và giảm `271790` CE pairs, tương đương khoảng `43.84%`, so với depth 100. Compute là secondary benefit, không phải lý do promotion.
+## Compute-efficient validated alternative
 
-Historical reference hierarchy: Dense→CE `m=2` / depth 100 là superseded validated reference; Dense→CE `m=8` / depth 100 là superseded validated reference; Dense→CE `m=8` / depth 50 là current validated reference. Tất cả historical results vẫn được giữ trong detailed research history.
+Dense→CE `m=8` / candidate depth 50 giữ nguyên toàn bộ stack trên và chỉ giảm candidate depth từ 100 xuống 50. Fixed-local-holdout metrics: precision `0.1884652981427175`, recall `0.8894591072010427`, MRR `0.7584082641848077`; CE pairs `348153`, giảm `0.43841127329448026` (khoảng `43.84%`) so với depth 100. Public score là `0.8915`.
+
+Depth 50 đã thỏa pre-frozen local-holdout promotion rule và vẫn là **fixed-local-holdout-validated compute-efficient variant**. Kết quả này không bị xóa hay gọi là failed experiment. Tuy nhiên depth 100 có public score cao hơn (`0.8935` so với `0.8915`), nên depth 100 được đặt lại làm **current public-score / public-inference reference**.
+
+## Public evidence history
+
+Bốn kết quả dưới đây là **external/public-test evidence**, không phải DEV selection evidence:
+
+| Submission | Public score | Method |
+|---|---:|---|
+| S1 | `0.8530` | BM25 → CE, `m=2`, candidate depth 100 |
+| S2 | `0.8685` | Dense → CE, `m=2`, candidate depth 100 |
+| S3 | `0.8935` | Dense → CE, `m=8`, candidate depth 100 |
+| S4 | `0.8915` | Dense → CE, `m=8`, candidate depth 50 |
+
+Sequence này cho thấy positive public movement rõ từ BM25→Dense và từ `m=2`→`m=8`, rồi small negative public movement khi depth 100→50. Đây là controlled historical evidence theo các thay đổi được Git xác nhận, nhưng không phải causal isolation vượt quá các method changes đó.
+
+The public leaderboard has now been observed for four submissions. It is treated as external evidence, not as a hyperparameter search surface. Không test depth 60/70/80/90 dựa trên public leaderboard feedback; không dùng public score để tune fusion weight, chunk parameter hay submit lặp lại mọi DEV variant. Candidate-depth tuning axis được đóng ở 50/100.
 
 ## Frozen decisions
 
-- Giữ fixed windows `2000/200`, dense sum-top-2 document aggregation, frozen BGE reranker, CE sum-top-2 aggregation và final `k=5` trong current validated stack.
-- Không tối ưu candidate Recall@100 riêng lẻ: coverage cao hơn có thể đi kèm final CE metrics thấp hơn.
-- Evidence hiện có phù hợp với diễn giải rằng bottleneck đã dần chuyển từ retrieval coverage sang ranking/evidence discrimination: `m=2 → m=8` tạo gain lớn và generalize trên holdout, còn depth 50 cải thiện nhẹ final ranking dù candidate recall thấp hơn. Article-aware chunks, naive BM25 union và windows `1000/100` có thể cải thiện coverage nhưng không tạo final top-5 gain tin cậy tương ứng; đây là evidence-supported interpretation, không phải causal proof.
+- Accuracy-oriented DEV experiments mới dùng depth-100 + `m=8` control với raw support chunks, dense sum-top-2, CE select top-2/sum-top-2 và final `k=5`.
+- Giữ fixed windows `2000/200`, dense sum-top-2 document aggregation, frozen BGE reranker, CE sum-top-2 aggregation và final `k=5` trong current public stack.
+- Không tối ưu candidate coverage riêng lẻ: coverage cao hơn không bảo đảm final CE metrics cao hơn.
+- Không tự động promote kết quả DEV vào holdout hoặc public inference.
 
 ## Closed or deprioritized
 
-- Superseded `m=2` supporting-evidence policy.
-- Candidate depth 100 trong vai trò current reference (superseded); historical validated results vẫn được giữ.
 - Article-aware representation trong current Dense→CE stack.
-- Simple CE aggregation alternatives: max-top-1, mean-top-2, sum-top-3.
 - Simple dense aggregation alternatives: max-top-1, mean-top-2, sum-top-3.
+- Simple CE aggregation alternatives: max-top-1, mean-top-2, sum-top-3.
 - Full-document support search ngoài global dense top-2000 evidence pool.
-- Naive uncapped dense-top-100 ∪ BM25-top-100 candidate union; decision này không phủ định mọi vai trò của BM25.
-- CE title-context prepend: small positive DEV point estimate, nhưng paired-bootstrap uncertainty chứa zero; không chọn cho holdout và deprioritize, không claim universally rejected.
+- Naive uncapped dense-top-100 ∪ BM25-top-100 candidate union.
+- CE title-context prepend.
+- Fixed windows `1000/100` trong downstream candidate stack.
 - Fixed windows `3000/300`.
-- Fixed windows `1000/100` trong current downstream stack: positive dense-retrieval signal nhưng weak/mixed downstream evidence; không chọn cho holdout, không claim representation này theoretically invalid.
+- Candidate-depth tuning ngoài hai depth 50/100 đã kiểm tra.
 
 ## Detailed research history
 
 - [`data_and_corpus.md`](research/data_and_corpus.md): raw-data audit, provenance, fixed-window variants và article-aware representation.
-- [`legalir_retrieval.md`](research/legalir_retrieval.md): lexical/dense retrieval, document aggregation, candidate union và candidate depth.
-- [`legalir_reranking.md`](research/legalir_reranking.md): CE evidence routing/aggregation, fixed-local-holdout validations và title-context confirmation state.
+- [`legalir_retrieval.md`](research/legalir_retrieval.md): lexical/dense retrieval, document aggregation, candidate union, candidate depth và public evidence.
+- [`legalir_reranking.md`](research/legalir_reranking.md): CE evidence routing/aggregation, fixed-local-holdout validations và public submission history.
