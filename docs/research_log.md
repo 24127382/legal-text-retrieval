@@ -21,18 +21,19 @@ fixed source-preserving windows: chunk_size=2000, overlap=200, step=1800
 
 Best observed public score: `0.8935`. Tie-break: CE document score descending, original dense document rank ascending, rồi `document_id` ascending. Dense revision được khai báo là `5617a9f61b028005a4858fdac845db406aefb181`; reranker revision là `953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e`. Cả hai chạy từ local snapshot với `local_files_only=True`.
 
-## Final-window focused research queue
+## Focused research state and next batch
 
-Mọi neural checkpoint mới phải thỏa hard competition gate `parameter_count < 4_000_000_000` trước khi evaluation; notebook ghi actual loaded parameter count và dừng ngay nếu không đủ điều kiện. Đây là eligibility rule, không phải research axis.
+Mọi neural checkpoint phải thỏa hard competition gate `parameter_count < 4_000_000_000` bằng actual loaded parameter count trước evaluation. Đây là eligibility rule, không phải research axis.
 
-Queue hiện chỉ giữ bốn high-upside questions và sáu standalone fixed-DEV notebooks:
+Batch trước đã kết thúc với các quyết định sau:
 
-1. Proper fixed-budget chunk fusion có phục hồi lexical signal mà naive uncapped document union đã làm mất không? So dense-only với equal-weight BM25+BGE RRF (`k=60`) và equal-weight per-query normalized-score fusion trong `bm25_bge_hybrid_fusion_dev.ipynb`.
-2. Retrieval-only signal của fixed windows `2000/500` có sống qua frozen `candidate100 → m8 → CE top2/sum-top2` không? Kiểm tra trong `fixed_window_overlap500_cross_encoder_dev.ipynb`.
-3. Retriever diversity có phục hồi BGE-M3 misses không? Đo GTE dense riêng, BGE+GTE chunk RRF downstream, và Jina ColBERT v2-64 late interaction trong ba notebook tương ứng; chưa tạo three-way hay second-stage combination.
-4. Frozen BGE reranker có trở thành bottleneck không? So cùng exact candidate/support pairs với GTE multilingual reranker trong `gte_multilingual_reranker_dev.ipynb`.
+- Equal-weight BM25+BGE normalized-score fusion là weak-positive, mechanistically credible: final precision `+0.0005791505791505891`, recall `+0.002654440154440163`, MRR `+0.0017218008160544418`; bootstrap vẫn cắt zero. Tiếp tục đúng một refinement dense-heavy, chưa chọn holdout.
+- Fixed-window `2000/500` downstream axis đóng; không DEV-selected.
+- GTE dense và Jina ColBERT challenger đóng do yếu hơn BGE và có rất ít unique gold complementarity. BGE+GTE hybrid evidence bị quarantine vì GTE-only metrics không tái lập giữa hai notebook.
+- GTE reranker collapse dưới Transformers 5 + manual positional/RoPE repair không được chấp nhận là model-negative evidence; correctness audit dưới Transformers 4.x đang chờ.
+- Current public reference không đổi: depth 100, `m=8`, public score `0.8935`.
 
-Thứ tự execution: chạy ngay BM25+BGE fusion và overlap500 downstream; sau GTE dense upload chạy song song GTE retrieval và BGE+GTE hybrid; sau GTE reranker upload chạy reranker challenger; sau Jina upload chạy late-interaction challenger. Không notebook nào tự động đi vào holdout hoặc public inference.
+Next batch chỉ gồm đúng sáu standalone fixed-DEV notebooks: BM25+BGE dense-heavy weights; BGE-M3 sparse retrieval; dense+sparse through frozen CE; Gemma reranker `m=2` screen; GTE reranker correctness audit; và lexical-candidate × final-rank interaction. Không notebook nào tự động đi vào holdout hoặc public inference.
 
 ## Compute-efficient validated alternative
 
@@ -73,6 +74,8 @@ The public leaderboard has now been observed for four submissions. It is treated
 - Fixed windows `1000/100` trong downstream candidate stack.
 - Fixed windows `3000/300`.
 - Candidate-depth tuning ngoài hai depth 50/100 đã kiểm tra.
+- Fixed windows `2000/500` dưới current downstream stack.
+- GTE dense retrieval challenger và Jina ColBERT challenger.
 
 ## Detailed research history
 

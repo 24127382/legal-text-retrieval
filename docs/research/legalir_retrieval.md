@@ -536,3 +536,19 @@ Downstream confirmation giữ candidate depth 100, `m=8`, raw-chunk CE input, CE
 Paired bootstrap 95% intervals của final delta là precision `[-0.002702702702702703, +0.003088803088803089]` và recall `[-0.009974259974259972, +0.015283140283140284]`; cả hai chứa zero.
 
 **Decision:** `1000/100` có positive dense-retrieval signal nhưng weak/mixed downstream CE evidence. Không đưa sang holdout; giữ validated representation là `2000/200`. Kết luận này chỉ áp dụng cho current downstream stack, không khẳng định `1000/100` theoretically invalid. `3000/300` vẫn rejected/deprioritized theo prior evidence.
+
+## Fixed-budget BM25+BGE fusion and challenger close-out
+
+**Date / status:** 2026-09-17 / completed fixed-DEV evidence review; only dense-heavy score-fusion refinement remains open.
+
+Equal-weight per-query min-max chunk-score fusion giữ fixed `2000/200`, mỗi branch top-2.000 chunks, fused top-2.000, document sum-top-2, candidate 100, arm-local `m=8`, frozen BGE CE top-2/sum-top-2 và final top-5. Dense control đạt precision `0.19150579150579153`, recall `0.8973616473616474`, MRR `0.7622471799366903`; fusion `0.50/0.50` đạt `0.19208494208494212`, `0.9000160875160875`, `0.7639689807527448`. Delta lần lượt là `+0.0005791505791505891`, `+0.002654440154440163`, `+0.0017218008160544418`; candidate R@100 tăng `+0.0050675675675675436`. Tại document top-100, fusion phục hồi 11 gold documents và displacement 4; bootstrap precision/recall vẫn chứa zero.
+
+**Decision:** score fusion là weak-positive nhưng mechanistically credible; chỉ tiếp tục predeclared dense-heavy alphas `0.65/0.35`, `0.75/0.25`, `0.85/0.15`. Equal-weight RRF giảm nhẹ final recall nên không tiếp tục RRF tuning. Đây chưa phải holdout-selected evidence.
+
+Historical JSON `bm25_bge_hybrid_fusion_dev_results.json` có field `candidate_overlap_with_dense_at_100` tính nhầm từ toàn bộ `rankings200`, vì vậy có thể lớn hơn 100. Bug chỉ nằm ở diagnostic overlap; final metrics, hybrid ranking, recovered/displaced top-100 và CE results không bị ảnh hưởng. Notebook đã được sửa cho future runs để ghi riêng overlap top-100 và top-200; historical result JSON không bị rewrite.
+
+Fixed-window overlap `2000/500` cho downstream deltas precision `-0.0001930501930501871`, recall `+0.0011261261261260591`, MRR `-0.003959860502800505`, với bootstrap weak/mixed. Đóng axis này và không DEV-select.
+
+GTE dense yếu hơn BGE rõ rệt. Tại top-100 gold-document complementarity: BGE-only `153`, GTE-only `1`, both `953`. GTE-only metrics trong standalone notebook và BGE+GTE hybrid notebook khác materially dù nominal settings giống nhau; vì vậy đóng GTE dense challenger và quarantine BGE+GTE hybrid evidence khỏi future decisions.
+
+Jina ColBERT v2-64 cho BGE-only `31` và ColBERT-only `4` gold documents tại top-100; challenger-only biến mất ở top-200. Đóng Jina ColBERT challenger, không tạo thêm notebook Jina.

@@ -554,3 +554,11 @@ The public leaderboard has now been observed for four submissions. It is treated
 
 **Current public-inference / public-score reference:** fixed `2000/200` → BGE-M3 top-2000 → dense sum-top-2 → candidate 100 → `m=8` → CE select top-2/sum-top-2 → deterministic top-5, best observed public score `0.8935`. Depth 50 giữ status fixed-local-holdout-validated compute-efficient alternative, public score `0.8915`.
 
+## GTE reranker result quarantine and correctness audit
+
+**Date / status:** 2026-09-17 / prior result quarantined; correctness audit pending.
+
+Trên exact same candidate-100 set, BGE reranker đạt final R@5 `0.8973616473616474`, trong khi observed GTE run chỉ đạt `0.03933397683397683`; cả hai giữ candidate R@100 `0.9819015444015444`. Collapse này được tạo dưới `transformers==5.0.0` sau manual rebuild positional/RoPE buffers, nên không được diễn giải thành “GTE reranker is bad”.
+
+Next step là audit bằng `AutoModelForSequenceClassification(..., trust_remote_code=True)` dưới attached Transformers `>=4.36,<5`, raw `model(...).logits.view(-1).float()`, không manual buffer repair trong primary arm. Full DEV chỉ được chạy sau semantic sanity, score-direction và optional CrossEncoder ordering gates. Outcome phải tách rõ `implementation invalid`, `model valid but worse`, hoặc `model valid and competitive`.
+
