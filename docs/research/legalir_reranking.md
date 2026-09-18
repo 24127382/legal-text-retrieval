@@ -552,7 +552,17 @@ Git xác nhận các configuration/method transitions trên; public scores là e
 
 The public leaderboard has now been observed for four submissions. It is treated as external evidence, not as a hyperparameter search surface. Candidate-depth tuning axis được đóng: không test depth 60/70/80/90 dựa trên leaderboard feedback; không dùng public score để tune fusion weights, chunk parameters hoặc submit mọi DEV variant.
 
-**Current public-inference / public-score reference:** fixed `2000/200` → BGE-M3 top-2000 → dense sum-top-2 → candidate 100 → `m=8` → CE select top-2/sum-top-2 → deterministic top-5, best observed public score `0.8935`. Depth 50 giữ status fixed-local-holdout-validated compute-efficient alternative, public score `0.8915`.
+**Previous public-score reference before the 2026-09-18 deployment decision:** fixed `2000/200` → BGE-M3 top-2000 → dense sum-top-2 → candidate 100 → `m=8` → CE select top-2/sum-top-2 → deterministic top-5, best observed public score `0.8935`. Score này vẫn là best observed public evidence cho đến khi candidate mới có score thực tế. Depth 50 giữ status fixed-local-holdout-validated compute-efficient alternative, public score `0.8915`.
+
+## Competition-time promotion of the selected DEV interaction
+
+**Date / status:** 2026-09-18 / selected for direct public inference; research frozen.
+
+Selected candidate: BM25+BGE per-query normalized score fusion `α_dense=0.50`, `α_BM25=0.50` → fused top-2.000 chunks → sum-top-2/document → candidate 100 → `m=8` hybrid supports → BGE reranker select top-2/sum-top-2 → final reciprocal-rank fusion `1/(60+CE rank) + 0.25/(60+original BGE dense rank)` → top-5. Original dense rank được dựng riêng từ BGE top-2.000 chunks bằng dense sum-top-2/document; hybrid-only document nhận rank `len(BGE top2000-derived document pool) + 1`, đúng implementation đã validate trong `hybrid_final_rank_interaction_dev.ipynb`.
+
+DEV metrics là precision `0.19420849420849426`, recall `0.9105534105534104`, MRR `0.7710374420013412`. Delta so với dense→CE baseline là `+0.00270270270270273`, `+0.0131917631917630`, `+0.0087902620646509`. Paired-bootstrap 95% CI: precision `[0.0009652509652509653, 0.004633204633204633]`, recall `[0.005308880308880309, 0.02171814671814672]`; fraction delta > 0 là `0.9979` và `0.9996`.
+
+Fixed local holdout được chủ động bỏ qua do thời gian competition còn lại quá ngắn. Đây là ngoại lệ deployment theo thời gian, không phải thay đổi methodological recommendation. Không tune thêm và không chạy research experiment khác. Public score `0.8935` của S3 vẫn là previous/current observed public reference cho đến khi submission mới có score thực tế.
 
 ## GTE reranker result quarantine and correctness audit
 

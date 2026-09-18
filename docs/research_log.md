@@ -4,36 +4,36 @@ Tài liệu này chỉ giữ current state, decisions và active questions. Evid
 
 Fixed DEV là split duy nhất dùng cho selection, tuning và sample-level diagnostics. Fixed local holdout chỉ dùng aggregate validation cho configuration đã freeze. Public leaderboard là external/public-test evidence, không phải DEV hay hyperparameter-search surface.
 
-## Current public-inference / public-score reference
+## Selected competition-time public deployment
 
 ```text
 fixed source-preserving windows: chunk_size=2000, overlap=200, step=1800
-→ BAAI/bge-m3 dense top-2000 chunks
-→ sum top-2 dense chunk scores/document
-→ top-100 candidate documents
-→ up to top-8 dense chunks/document from the original global top-2000 pool
+→ BAAI/bge-m3 normalized CLS top-2000 chunks
++ BM25S 0.3.11 Lucene top-2000 chunks
+→ per-query min-max score normalization
+→ 0.50 * dense + 0.50 * BM25
+→ fused top-2000 chunks
+→ sum top-2 hybrid chunk scores/document
+→ candidate depth 100
+→ up to top-8 hybrid chunks/document from the fused top-2000 pool
 → BAAI/bge-reranker-v2-m3 scores every available support independently
 → select top-2 chunks by CE score
 → sum top-2 CE scores/document
-→ deterministic ranking
+→ final score = 1/(60 + CE rank) + 0.25/(60 + original BGE dense rank)
 → top-5 unique document IDs
 ```
 
-Best observed public score: `0.8935`. Tie-break: CE document score descending, original dense document rank ascending, rồi `document_id` ascending. Dense revision được khai báo là `5617a9f61b028005a4858fdac845db406aefb181`; reranker revision là `953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e`. Cả hai chạy từ local snapshot với `local_files_only=True`.
+DEV-selected candidate metrics: precision `0.19420849420849426`, recall `0.9105534105534104`, MRR `0.7710374420013412`. So với dense→CE baseline (`0.19150579150579153`, `0.8973616473616474`, `0.7622471799366903`), delta lần lượt là `+0.00270270270270273`, `+0.0131917631917630`, `+0.0087902620646509`. Paired-bootstrap 95% CI là precision `[0.0009652509652509653, 0.004633204633204633]`, recall `[0.005308880308880309, 0.02171814671814672]`; fraction delta > 0 là `0.9979` và `0.9996`.
 
-## Focused research state and next batch
+Đây là **competition-time deployment decision** ngày 2026-09-18. Fixed local holdout được chủ động bỏ qua vì thời gian thi còn lại quá ngắn; đây không phải khuyến nghị thay đổi research protocol thông thường. Không tune thêm weight/lambda và không mở experiment mới. Notebook public chỉ dùng 1.000 câu hỏi unlabeled; không đọc answer labels hay chạy evaluation.
 
-Mọi neural checkpoint phải thỏa hard competition gate `parameter_count < 4_000_000_000` bằng actual loaded parameter count trước evaluation. Đây là eligibility rule, không phải research axis.
+## Previous public-score reference remains unchanged
 
-Batch trước đã kết thúc với các quyết định sau:
+Best observed public score vẫn là `0.8935` từ S3 cho đến khi candidate mới có public score thực tế; không suy diễn hay ghi đè score này. S3 dùng fixed `2000/200` → BGE-M3 dense top-2000 → dense sum-top-2 → candidate 100 → `m=8` → CE select top-2/sum-top-2 → deterministic top-5.
 
-- Equal-weight BM25+BGE normalized-score fusion là weak-positive, mechanistically credible: final precision `+0.0005791505791505891`, recall `+0.002654440154440163`, MRR `+0.0017218008160544418`; bootstrap vẫn cắt zero. Tiếp tục đúng một refinement dense-heavy, chưa chọn holdout.
-- Fixed-window `2000/500` downstream axis đóng; không DEV-selected.
-- GTE dense và Jina ColBERT challenger đóng do yếu hơn BGE và có rất ít unique gold complementarity. BGE+GTE hybrid evidence bị quarantine vì GTE-only metrics không tái lập giữa hai notebook.
-- GTE reranker collapse dưới Transformers 5 + manual positional/RoPE repair không được chấp nhận là model-negative evidence; correctness audit dưới Transformers 4.x đang chờ.
-- Current public reference không đổi: depth 100, `m=8`, public score `0.8935`.
+Dense revision là `5617a9f61b028005a4858fdac845db406aefb181`; reranker revision là `953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e`. Public notebook load local snapshot với `local_files_only=True` và hard-fail nếu actual loaded parameter count của bất kỳ neural model nào không nhỏ hơn `4_000_000_000`.
 
-Next batch chỉ gồm đúng sáu standalone fixed-DEV notebooks: BM25+BGE dense-heavy weights; BGE-M3 sparse retrieval; dense+sparse through frozen CE; Gemma reranker `m=2` screen; GTE reranker correctness audit; và lexical-candidate × final-rank interaction. Không notebook nào tự động đi vào holdout hoặc public inference.
+Research cho submission này đã freeze; không còn next batch trước submission.
 
 ## Compute-efficient validated alternative
 
